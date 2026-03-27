@@ -18,6 +18,13 @@ import torch.nn.functional as F
 
 
 # ── Differentiable codec proxy ────────────────────────────────────────────────
+#
+# H.264 / YUV 4:2:0 artifacts (in order of visual impact):
+#   1. Chroma subsampling (yuv420p)  ← new in this version
+#   2. Gaussian blur / DCT low-pass
+#   3. Additive quantisation noise
+#   4. Spatial scale rounding
+#
 
 def _gaussian_kernel(sigma: float, device: torch.device) -> torch.Tensor:
     """Build a 2D Gaussian kernel tensor [1, 1, K, K]."""
@@ -56,38 +63,86 @@ def differentiable_resize(x: torch.Tensor, scale: float) -> torch.Tensor:
     return x_up
 
 
+def simulate_yuv420p(x: torch.Tensor) -> torch.Tensor:
+    """
+    Differentiable simulation of H.264 YUV 4:2:0 chroma subsampling.
+
+    Converts RGB → YCbCr, halves chroma resolution (2× downsample/upsample),
+    then converts back to RGB.  This is the dominant artifact in H.264 because
+    the codec always writes yuv420p, even when the source is full-colour.
+
+    Args:
+        x: [B, 3, H, W] in [0, 1]
+    Returns:
+        x_420: [B, 3, H, W] in [0, 1]  (luma unchanged, chroma blurred)
+    """
+    r, g, b = x[:, 0:1], x[:, 1:2], x[:, 2:3]
+
+    # BT.601 RGB → YCbCr
+    y  =  0.299  * r + 0.587  * g + 0.114  * b
+    cb = -0.16874 * r - 0.33126 * g + 0.500   * b + 0.5
+    cr =  0.500   * r - 0.41869 * g - 0.08131 * b + 0.5
+
+    # 4:2:0 — halve chroma resolution then restore
+    cb_sub = F.avg_pool2d(cb, kernel_size=2, stride=2)
+    cr_sub = F.avg_pool2d(cr, kernel_size=2, stride=2)
+    B, _, H, W = x.shape
+    cb_up = F.interpolate(cb_sub, size=(H, W), mode="bilinear", align_corners=False)
+    cr_up = F.interpolate(cr_sub, size=(H, W), mode="bilinear", align_corners=False)
+
+    # BT.601 YCbCr → RGB
+    r_out = y + 1.402   * (cr_up - 0.5)
+    g_out = y - 0.34414 * (cb_up - 0.5) - 0.71414 * (cr_up - 0.5)
+    b_out = y + 1.772   * (cb_up - 0.5)
+
+    return torch.cat([r_out, g_out, b_out], dim=1).clamp(0.0, 1.0)
+
+
 def codec_proxy_transform(
     x: torch.Tensor,
     blur_sigmas: Tuple[float, ...] = (0.0, 0.5, 1.0),
     noise_stds:  Tuple[float, ...] = (0.0, 0.005, 0.01),
     resize_scales: Tuple[float, ...] = (1.0, 0.90, 0.95),
     p_apply: float = 0.8,
+    p_yuv420: float = 0.8,
 ) -> torch.Tensor:
     """
-    Differentiable H.264 proxy: random combination of blur + noise + resize.
+    Differentiable H.264 proxy: YUV420p chroma subsampling + blur + noise + resize.
     Used during Stage 3 training (EOT).
+
+    Changes vs. original:
+    - Added simulate_yuv420p (dominant H.264 artifact, applied first)
+    - p_yuv420 controls chroma-subsampling probability
 
     Args:
         x:             [B, 3, H, W] in [0, 1]
         blur_sigmas:   pool of Gaussian sigma values to sample from
         noise_stds:    pool of noise standard deviations
         resize_scales: pool of downscale factors
-        p_apply:       probability of applying each transform
+        p_apply:       probability of applying blur / noise / resize
+        p_yuv420:      probability of applying YUV 4:2:0 chroma subsampling
     Returns:
         x_transformed: [B, 3, H, W] in [0, 1]
     """
     out = x
 
+    # 1. Chroma subsampling (dominant H.264 artifact)
+    if random.random() < p_yuv420:
+        out = simulate_yuv420p(out)
+
+    # 2. Low-pass blur (DCT quantisation proxy)
     if random.random() < p_apply:
         sigma = random.choice(blur_sigmas)
         if sigma > 0:
             out = differentiable_blur(out, sigma)
 
+    # 3. Quantisation noise
     if random.random() < p_apply:
         std = random.choice(noise_stds)
         if std > 0:
             out = (out + torch.randn_like(out) * std).clamp(0.0, 1.0)
 
+    # 4. Spatial resolution rounding
     if random.random() < p_apply:
         scale = random.choice(resize_scales)
         out = differentiable_resize(out, scale)

@@ -22,8 +22,10 @@ CONDA_PYTHON = r"D:\Users\glitterrr\anaconda3\envs\sam2_privacy_preprocessor\pyt
 DAVIS_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "davis")
 DAVIS_RES  = "480p"
 
-# DAVIS person-category train videos (DAVIS 2017 semi-supervised, person only)
-# Full list — use --videos flag to select a subset for quick runs.
+# DAVIS 2017 mixed-category videos (generic VOS target suppression benchmark).
+# NOTE: despite the earlier "person only" label, the actual split includes animals,
+# vehicles, and other objects.  The method is framed as generic VOS target
+# suppression; see DAVIS_HUMAN_TRAIN / DAVIS_HUMAN_VAL for the human-only subset.
 DAVIS_TRAIN_VIDEOS_ALL = [
     "bear", "bike-packing", "blackswan", "bmx-bumps", "bmx-trees",
     "boat", "breakdance", "breakdance-flare", "bus", "car-roundabout",
@@ -31,6 +33,14 @@ DAVIS_TRAIN_VIDEOS_ALL = [
     "cows", "crossing", "dance-jump", "dance-twirl", "dog",
     "dog-agility", "dog-gooses", "dogs-scale", "drift-chicane",
     "drift-straight", "drift-turn", "drone", "elephant", "flamingo",
+]
+# Human/person-centric subset of DAVIS 2017 (for privacy-specific evaluation)
+DAVIS_HUMAN_TRAIN = [
+    "breakdance", "breakdance-flare", "dance-jump", "dance-twirl",
+    "color-run", "bike-packing",
+]
+DAVIS_HUMAN_VAL = [
+    "bmx-bumps", "bmx-trees", "cat-girl",
 ]
 # Minimal subsets for quick experiments
 DAVIS_MINI_TRAIN = ["bear", "breakdance", "car-shadow", "dance-jump", "dog"]

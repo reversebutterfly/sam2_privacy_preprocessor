@@ -1,7 +1,7 @@
 """
 Loss functions for SAM2 Privacy Preprocessor training.
 
-L_total = L_attack + λ1·L_perceptual + λ2·L_temporal + λ3·L_decoy
+L_total = L_attack + λ1·L_perceptual + λ2·L_temporal + λ3·L_decoy + λ4·L_ssim
 
 All losses return scalar tensors (differentiable).
 """
@@ -94,6 +94,82 @@ class PerceptualLoss(nn.Module):
             b = x_adv  * 2.0 - 1.0
             return self.lpips_fn(a, b).mean().item()
         return F.mse_loss(x_adv, x_orig).item() ** 0.5
+
+
+# ── SSIM constraint ───────────────────────────────────────────────────────────
+
+def compute_ssim(
+    x: torch.Tensor,
+    y: torch.Tensor,
+    window_size: int = 11,
+) -> torch.Tensor:
+    """
+    Differentiable SSIM between two [B, C, H, W] tensors in [0, 1].
+    Returns mean SSIM scalar (higher = more similar, max 1.0).
+    """
+    C1, C2 = 0.01 ** 2, 0.03 ** 2
+    sigma = 1.5
+    B, C, H, W = x.shape
+
+    # Build Gaussian window
+    k = torch.arange(window_size, dtype=torch.float32, device=x.device) - window_size // 2
+    window_1d = torch.exp(-k ** 2 / (2 * sigma ** 2))
+    window_1d = window_1d / window_1d.sum()
+    window_2d = window_1d.unsqueeze(1) * window_1d.unsqueeze(0)  # [W, W]
+    window = window_2d.view(1, 1, window_size, window_size).expand(C, 1, -1, -1)
+
+    pad = window_size // 2
+
+    def blur(t):
+        return F.conv2d(F.pad(t, [pad] * 4, mode="reflect"), window, groups=C)
+
+    mu_x = blur(x)
+    mu_y = blur(y)
+    mu_x2  = mu_x * mu_x
+    mu_y2  = mu_y * mu_y
+    mu_xy  = mu_x * mu_y
+    sig_x2 = blur(x * x) - mu_x2
+    sig_y2 = blur(y * y) - mu_y2
+    sig_xy = blur(x * y) - mu_xy
+
+    num = (2 * mu_xy + C1) * (2 * sig_xy + C2)
+    den = (mu_x2 + mu_y2 + C1) * (sig_x2 + sig_y2 + C2)
+    ssim_map = num / (den + 1e-8)
+    return ssim_map.mean()
+
+
+class SSIMConstraint(nn.Module):
+    """
+    SSIM hinge loss: max(0, ssim_loss - threshold) where ssim_loss = 1 - SSIM.
+
+    Enforces SSIM(x_orig, x_adv) >= 1 - threshold (default: SSIM >= 0.90).
+    Complements the LPIPS hinge to enforce structural similarity.
+    """
+
+    def __init__(self, threshold: float = 0.10):
+        """
+        Args:
+            threshold: max allowed (1 - SSIM), i.e. SSIM >= 1 - threshold.
+                       0.05 → SSIM ≥ 0.95 (tight); 0.10 → SSIM ≥ 0.90 (moderate).
+        """
+        super().__init__()
+        self.threshold = threshold
+
+    def forward(self, x_orig: torch.Tensor, x_adv: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x_orig, x_adv: [B, 3, H, W] in [0, 1]
+        Returns:
+            scalar hinge loss
+        """
+        ssim_val  = compute_ssim(x_orig, x_adv)
+        ssim_loss = 1.0 - ssim_val          # lower is better; we want this ≤ threshold
+        return F.relu(ssim_loss - self.threshold)
+
+    @torch.no_grad()
+    def measure(self, x_orig: torch.Tensor, x_adv: torch.Tensor) -> float:
+        """Returns raw SSIM value (no hinge), for logging."""
+        return compute_ssim(x_orig, x_adv).item()
 
 
 # ── Temporal consistency loss ─────────────────────────────────────────────────
