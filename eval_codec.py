@@ -111,10 +111,25 @@ def apply_preprocessor(
     g_theta: Optional[nn.Module] = None,
     uap_delta: Optional[torch.Tensor] = None,
     input_size: int = 1024,
+    g_theta_size: int = 0,
+    frame0_only: bool = False,
 ) -> List[np.ndarray]:
-    """Apply g_theta or UAP delta to frames, return adversarial uint8 frames."""
+    """Apply g_theta or UAP delta to frames, return adversarial uint8 frames.
+
+    g_theta_size:  resolution at which g_theta runs (0 = same as input_size).
+                   Should match the --g_theta_size used during training.
+    frame0_only:   Publisher-side framing — apply the preprocessor ONLY to frame-0.
+                   All subsequent frames are returned unmodified.
+                   Matches the threat model of train_publisher.py.
+    """
+    if g_theta_size <= 0:
+        g_theta_size = input_size
     adv_frames = []
-    for frame_np in frames_uint8:
+    for fi, frame_np in enumerate(frames_uint8):
+        # Publisher framing: only modify frame-0; all other frames pass through
+        if frame0_only and fi > 0:
+            adv_frames.append(frame_np)
+            continue
         x = torch.from_numpy(frame_np.astype(np.float32) / 255.0).permute(2, 0, 1).unsqueeze(0).to(device)
         H, W = frame_np.shape[:2]
         x1024 = torch.nn.functional.interpolate(x, size=(input_size, input_size),
@@ -126,11 +141,24 @@ def apply_preprocessor(
                 x_adv_1024 = torch.clamp(x1024 + uap_delta.to(device), 0, 1)
             elif mode == "ours" and g_theta is not None:
                 g_theta.eval()
-                x_adv_1024 = g_theta(x1024)[0]
+                if g_theta_size < input_size:
+                    # Mirror training: run g_theta at training resolution, upsample delta
+                    x_small = torch.nn.functional.interpolate(
+                        x1024, size=(g_theta_size, g_theta_size),
+                        mode="bilinear", align_corners=False,
+                    )
+                    delta_small = g_theta(x_small)[1]  # index 1 = delta for all stages
+                    delta_full = torch.nn.functional.interpolate(
+                        delta_small, size=(input_size, input_size),
+                        mode="bilinear", align_corners=False,
+                    )
+                    x_adv_1024 = torch.clamp(x1024 + delta_full, 0, 1)
+                else:
+                    x_adv_1024 = g_theta(x1024)[0]
             else:
                 x_adv_1024 = x1024
 
-        # Resize back to original
+        # Resize back to original frame resolution
         x_adv = torch.nn.functional.interpolate(x_adv_1024, size=(H, W),
                                                   mode="bilinear", align_corners=False)
         adv_np = (x_adv[0].permute(1, 2, 0).cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
@@ -150,6 +178,8 @@ def eval_video(
     crf_values: List[int] = None,
     ffmpeg_path: str = "ffmpeg",
     max_frames: int = 50,
+    g_theta_size: int = 0,
+    frame0_only: bool = False,
 ) -> Dict:
     """
     Evaluate one video: clean SAM2 -> adversarial (pre-codec) -> post-codec at each CRF.
@@ -170,7 +200,8 @@ def eval_video(
     )
 
     # --- Adversarial (pre-codec) ---
-    adv_frames = apply_preprocessor(frames, device, mode, g_theta, uap_delta)
+    adv_frames = apply_preprocessor(frames, device, mode, g_theta, uap_delta,
+                                     g_theta_size=g_theta_size, frame0_only=frame0_only)
     _, jf_adv, j_adv, f_adv = run_sam2_video_tracking(
         adv_frames, masks, sam2_checkpoint, sam2_config, device
     )
@@ -188,8 +219,11 @@ def eval_video(
             print(f"    [WARN] FFmpeg CRF={crf} failed: {e}")
             codec_results[crf] = {"jf": -1.0, "j": -1.0, "f": -1.0}
 
-    # Primary CRF = first in list (default 23)
-    primary_crf  = crf_values[0]
+    # Primary CRF = 23 if available (canonical quality), else first successful value.
+    # This is independent of the order passed to --crf so the number is reproducible.
+    primary_crf = 23 if 23 in codec_results and codec_results[23]["jf"] >= 0 else next(
+        (c for c in crf_values if codec_results.get(c, {}).get("jf", -1) >= 0), crf_values[0]
+    )
     jf_codec     = codec_results[primary_crf]["jf"]
     j_codec      = codec_results[primary_crf]["j"]
     f_codec      = codec_results[primary_crf]["f"]
@@ -232,12 +266,24 @@ def parse_args():
     p.add_argument("--videos",      default=None)
     p.add_argument("--max_frames",  type=int, default=50)
     p.add_argument("--crf",         type=int, nargs="+", default=[23],
-                   help="H.264 CRF value(s) to sweep, e.g. --crf 18 23 28")
+                   help="H.264 CRF value(s) to sweep, e.g. --crf 18 23 28 35")
+    p.add_argument("--g_theta_size", type=int, default=0,
+                   help="g_theta inference resolution (0 = full 1024). Must match training --g_theta_size")
     p.add_argument("--ffmpeg_path", default=FFMPEG_PATH)
     p.add_argument("--sam2_checkpoint", default=SAM2_CHECKPOINT)
     p.add_argument("--sam2_config",     default=SAM2_CONFIG)
     p.add_argument("--save_dir",    default=RESULTS_DIR)
     p.add_argument("--tag",         default=None)
+    # Publisher-side framing: modify frame-0 only (matches train_publisher.py)
+    p.add_argument("--frame0_only", action="store_true",
+                   help="Apply preprocessor to frame-0 only (publisher-side threat model). "
+                        "All other frames are evaluated clean. "
+                        "Use with checkpoints from train_publisher.py.")
+    # Pre-registered validity criterion (Fix C, Round 3)
+    p.add_argument("--min_jf_clean", type=float, default=0.0,
+                   help="Minimum clean J&F for a video to count in the 'valid' subset "
+                        "(recommended: 0.5). Videos below this threshold are included in "
+                        "the all-videos average but reported separately.")
     return p.parse_args()
 
 
@@ -251,9 +297,9 @@ def main():
     uap_delta = None
     if args.mode == "ours" and args.checkpoint:
         if args.stage == 4:
-            g_theta = Stage4Preprocessor(args.channels, args.num_blocks, args.max_delta).to(device)
+            g_theta = Stage4Preprocessor(channels=args.channels, num_blocks=args.num_blocks, max_delta=args.max_delta).to(device)
         else:
-            g_theta = ResidualPreprocessor(args.channels, args.num_blocks, args.max_delta).to(device)
+            g_theta = ResidualPreprocessor(channels=args.channels, num_blocks=args.num_blocks, max_delta=args.max_delta).to(device)
         g_theta.load_state_dict(torch.load(args.checkpoint, map_location=device))
         g_theta.eval()
         print(f"  Loaded g_theta from {args.checkpoint}")
@@ -272,22 +318,50 @@ def main():
                 args.sam2_checkpoint, args.sam2_config,
                 mode=args.mode, g_theta=g_theta, uap_delta=uap_delta,
                 crf_values=args.crf, ffmpeg_path=args.ffmpeg_path, max_frames=args.max_frames,
+                g_theta_size=args.g_theta_size, frame0_only=args.frame0_only,
             )
             if r:
                 results.append(r)
                 print(f"  {vid}: JF_clean={r['jf_clean']:.3f} "
                       f"JF_adv={r['jf_adv']:.3f} JF_codec={r['jf_codec']:.3f} "
-                      f"SSIM={r['mean_ssim']:.3f}")
+                      f"dJF_codec={r['delta_jf_codec']:.3f} SSIM={r['mean_ssim']:.3f}")
         except Exception as e:
             print(f"  [ERROR] {vid}: {e}")
 
     # Summary
     if results:
-        for key in ["jf_clean", "jf_adv", "jf_codec", "delta_jf_adv", "delta_jf_codec",
-                    "mean_ssim", "mean_psnr"]:
-            vals = [r[key] for r in results if r.get(key, -1) >= 0]
-            if vals:
-                print(f"  mean_{key}: {np.mean(vals):.4f}")
+        def _print_summary(label: str, subset: list) -> None:
+            if not subset:
+                return
+            print(f"\n  [{label}]  n={len(subset)}")
+            for key in ["jf_clean", "jf_adv", "delta_jf_adv", "mean_ssim", "mean_psnr"]:
+                vals = [r[key] for r in subset if key in r]
+                if vals:
+                    print(f"    mean_{key}: {np.mean(vals):.4f}")
+            # codec metrics: skip only hard failures (jf_codec==-1)
+            codec_vals   = [r["jf_codec"]       for r in subset if r.get("jf_codec", -1)       != -1.0]
+            djf_c_vals   = [r["delta_jf_codec"]  for r in subset if r.get("delta_jf_codec",-999) != -1.0]
+            if codec_vals:
+                print(f"    mean_jf_codec (CRF{primary_crf_for_summary}): {np.mean(codec_vals):.4f}"
+                      f" (n={len(codec_vals)})")
+                print(f"    mean_delta_jf_codec: {np.mean(djf_c_vals):.4f}")
+
+        # Determine primary CRF used: prefer CRF23 (Fix G Round 4 — avoid reporting CRF18 label)
+        primary_crf_for_summary = 23 if (hasattr(args, "crf") and 23 in args.crf) else (
+            args.crf[0] if hasattr(args, "crf") else 23
+        )
+
+        # All videos (full unbiased average)
+        _print_summary("ALL", results)
+
+        # Pre-registered valid subset (JF_clean > min_jf_clean)
+        if args.min_jf_clean > 0:
+            valid = [r for r in results if r.get("jf_clean", 0) >= args.min_jf_clean]
+            invalid = [r for r in results if r.get("jf_clean", 0) < args.min_jf_clean]
+            if invalid:
+                print(f"\n  Degenerate videos excluded (JF_clean < {args.min_jf_clean}): "
+                      f"{[r['video'] for r in invalid]}")
+            _print_summary(f"VALID (jf_clean >= {args.min_jf_clean})", valid)
 
     # Save
     run_name = (f"{args.tag}_" if args.tag else "") + f"eval_codec_{args.mode}"
