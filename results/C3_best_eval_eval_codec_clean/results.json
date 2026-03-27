@@ -1,0 +1,203 @@
+{
+  "args": {
+    "mode": "clean",
+    "checkpoint": "results_v100/C3_vid_s1_ours_video_s1_steps5000/g_theta_step4000.pt",
+    "uap_delta": null,
+    "stage": 1,
+    "channels": 32,
+    "num_blocks": 4,
+    "max_delta": 0.03137254901960784,
+    "davis_root": "/IMBR_Data/Student-home/2025M_LvShaoting/sam2_privacy_preprocessor/data/davis",
+    "videos": null,
+    "max_frames": 50,
+    "crf": [
+      18,
+      23,
+      28
+    ],
+    "g_theta_size": 0,
+    "ffmpeg_path": "ffmpeg",
+    "sam2_checkpoint": "/IMBR_Data/Student-home/2025M_LvShaoting/sam2_privacy_preprocessor/checkpoints/sam2.1_hiera_tiny.pt",
+    "sam2_config": "configs/sam2.1/sam2.1_hiera_t.yaml",
+    "save_dir": "/IMBR_Data/Student-home/2025M_LvShaoting/sam2_privacy_preprocessor/results",
+    "tag": "C3_best_eval",
+    "min_jf_clean": 0.5
+  },
+  "results": [
+    {
+      "video": "bike-packing",
+      "n_frames": 50,
+      "jf_clean": 0.7386044067003334,
+      "j_clean": 0.7058929703705146,
+      "f_clean": 0.7713158430301524,
+      "jf_adv": 0.7290001946505978,
+      "j_adv": 0.6961622063314767,
+      "f_adv": 0.7618381829697188,
+      "jf_codec": -1.0,
+      "j_codec": -1.0,
+      "f_codec": -1.0,
+      "delta_jf_adv": 0.009604212049735605,
+      "delta_jf_codec": -1.0,
+      "mean_ssim": 0.9844746511687715,
+      "mean_psnr": 37.059608459472656,
+      "mean_lpips": 0.03488942589610815,
+      "codec_sweep": {
+        "crf18": {
+          "jf": -1.0,
+          "j": -1.0,
+          "f": -1.0
+        },
+        "crf23": {
+          "jf": -1.0,
+          "j": -1.0,
+          "f": -1.0
+        },
+        "crf28": {
+          "jf": -1.0,
+          "j": -1.0,
+          "f": -1.0
+        }
+      }
+    },
+    {
+      "video": "blackswan",
+      "n_frames": 50,
+      "jf_clean": 0.9195912535943752,
+      "j_clean": 0.9401344941090681,
+      "f_clean": 0.8990480130796823,
+      "jf_adv": 0.9432573426550266,
+      "j_adv": 0.9506814377340388,
+      "f_adv": 0.9358332475760143,
+      "jf_codec": -1.0,
+      "j_codec": -1.0,
+      "f_codec": -1.0,
+      "delta_jf_adv": -0.023666089060651374,
+      "delta_jf_codec": -1.0,
+      "mean_ssim": 0.9907702173949282,
+      "mean_psnr": 41.167327880859375,
+      "mean_lpips": 0.020381250493228434,
+      "codec_sweep": {
+        "crf18": {
+          "jf": -1.0,
+          "j": -1.0,
+          "f": -1.0
+        },
+        "crf23": {
+          "jf": -1.0,
+          "j": -1.0,
+          "f": -1.0
+        },
+        "crf28": {
+          "jf": -1.0,
+          "j": -1.0,
+          "f": -1.0
+        }
+      }
+    },
+    {
+      "video": "bmx-bumps",
+      "n_frames": 50,
+      "jf_clean": 0.09951546078171793,
+      "j_clean": 0.05358687146349264,
+      "f_clean": 0.14544405009994327,
+      "jf_adv": 0.06493859188646954,
+      "j_adv": 0.03915914487746966,
+      "f_adv": 0.09071803889546942,
+      "jf_codec": -1.0,
+      "j_codec": -1.0,
+      "f_codec": -1.0,
+      "delta_jf_adv": 0.034576868895248386,
+      "delta_jf_codec": -1.0,
+      "mean_ssim": 0.989322810252332,
+      "mean_psnr": 41.223331451416016,
+      "mean_lpips": 0.021744111869484186,
+      "codec_sweep": {
+        "crf18": {
+          "jf": -1.0,
+          "j": -1.0,
+          "f": -1.0
+        },
+        "crf23": {
+          "jf": -1.0,
+          "j": -1.0,
+          "f": -1.0
+        },
+        "crf28": {
+          "jf": -1.0,
+          "j": -1.0,
+          "f": -1.0
+        }
+      }
+    },
+    {
+      "video": "boat",
+      "n_frames": 50,
+      "jf_clean": 0.016799561133709354,
+      "j_clean": 0.00658376751662942,
+      "f_clean": 0.02701535475078929,
+      "jf_adv": 0.7426019280933674,
+      "j_adv": 0.7509864477846543,
+      "f_adv": 0.7342174084020805,
+      "jf_codec": -1.0,
+      "j_codec": -1.0,
+      "f_codec": -1.0,
+      "delta_jf_adv": -0.725802366959658,
+      "delta_jf_codec": -1.0,
+      "mean_ssim": 0.9890403136639649,
+      "mean_psnr": 41.11050796508789,
+      "mean_lpips": 0.028136229291558266,
+      "codec_sweep": {
+        "crf18": {
+          "jf": -1.0,
+          "j": -1.0,
+          "f": -1.0
+        },
+        "crf23": {
+          "jf": -1.0,
+          "j": -1.0,
+          "f": -1.0
+        },
+        "crf28": {
+          "jf": -1.0,
+          "j": -1.0,
+          "f": -1.0
+        }
+      }
+    },
+    {
+      "video": "bus",
+      "n_frames": 50,
+      "jf_clean": 0.9353332199214376,
+      "j_clean": 0.9610894118111236,
+      "f_clean": 0.9095770280317517,
+      "jf_adv": 0.9361787582522655,
+      "j_adv": 0.961525945293055,
+      "f_adv": 0.9108315712114761,
+      "jf_codec": -1.0,
+      "j_codec": -1.0,
+      "f_codec": -1.0,
+      "delta_jf_adv": -0.0008455383308278996,
+      "delta_jf_codec": -1.0,
+      "mean_ssim": 0.9905605817296325,
+      "mean_psnr": 40.905216217041016,
+      "mean_lpips": 0.023581427037715912,
+      "codec_sweep": {
+        "crf18": {
+          "jf": -1.0,
+          "j": -1.0,
+          "f": -1.0
+        },
+        "crf23": {
+          "jf": -1.0,
+          "j": -1.0,
+          "f": -1.0
+        },
+        "crf28": {
+          "jf": -1.0,
+          "j": -1.0,
+          "f": -1.0
+        }
+      }
+    }
+  ]
+}

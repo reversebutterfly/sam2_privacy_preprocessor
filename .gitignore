@@ -1,3 +1,27 @@
-/data/DAVIS/
-/checkpoints/*.pt
-/checkpoints/
+# Large data and model files
+data/
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+
+# Nested git repos (SAM2 package - re-clone from official)
+src/sam2/
+
+# Large experiment artifacts (keep JSON/CSV/PNG, exclude tensors)
+results_v100/B1a*/
+results_v100/B1b*/
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+
+# Misc
+.DS_Store
+*.log
+__pycache__/
+*.pyc
