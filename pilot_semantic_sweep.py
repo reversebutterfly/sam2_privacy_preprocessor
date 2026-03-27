@@ -52,7 +52,7 @@ if ROOT not in sys.path:
 
 from config import SAM2_CHECKPOINT, SAM2_CONFIG, DAVIS_ROOT, DAVIS_MINI_VAL, FFMPEG_PATH
 from src.dataset import load_single_video
-from src.codec_eot import encode_decode_h264, tensor_to_frames, frames_to_tensor
+from src.codec_eot import encode_decode_h264
 from src.metrics import jf_score, mean_jf
 
 
@@ -233,9 +233,8 @@ def codec_round_trip(
 ) -> Optional[List[np.ndarray]]:
     """H.264 encode + decode. Returns None on failure."""
     try:
-        tensor = frames_to_tensor(frames_uint8)
-        tensor_rt = encode_decode_h264(tensor, ffmpeg_path=ffmpeg_path, crf=crf)
-        return tensor_to_frames(tensor_rt)
+        # encode_decode_h264 takes List[np.ndarray] directly, returns List[np.ndarray]
+        return encode_decode_h264(frames_uint8, ffmpeg_path=ffmpeg_path, crf=crf)
     except Exception as e:
         print(f"  [codec] error: {e}")
         return None
