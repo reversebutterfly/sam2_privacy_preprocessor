@@ -23,3 +23,5 @@ __pycache__/
 # Misc
 .DS_Store
 *.log
+__pycache__/
+*.pyc
