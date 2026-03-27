@@ -401,11 +401,19 @@ class SAM2VideoMemoryAttacker(nn.Module):
                 mode="bilinear", align_corners=False,
             )
 
-            maskmem_features, maskmem_pos_enc = self.sam2.memory_encoder(
+            enc_out = self.sam2.memory_encoder(
                 pix_feat, masks_1024, skip_mask_sigmoid=False,
             )
+            # SAM2 MemoryEncoder.forward() returns a dict in some versions:
+            #   {"vision_features": Tensor, "vision_pos_enc": [Tensor]}
+            # and a tuple (Tensor, Tensor/list) in others. Handle both.
+            if isinstance(enc_out, dict):
+                maskmem_features = enc_out["vision_features"]
+                maskmem_pos_enc  = enc_out["vision_pos_enc"]
+            else:
+                maskmem_features, maskmem_pos_enc = enc_out
             # maskmem_features: [B, C_m, H_m, W_m]
-            # maskmem_pos_enc: list[Tensor]; take index 0
+            # maskmem_pos_enc: list[Tensor] or Tensor; take index 0 if list
             pos = maskmem_pos_enc[0] if isinstance(maskmem_pos_enc, (list, tuple)) \
                 else maskmem_pos_enc
             # Flatten spatial dims: [B, C, H, W] → [H*W, B, C]
