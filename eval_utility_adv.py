@@ -38,7 +38,7 @@ if ROOT not in sys.path:
 from config import DAVIS_ROOT, FFMPEG_PATH
 from src.dataset import load_single_video
 from pilot_mask_guided import frame_quality
-from src.fancy_suppression import apply_adv_opt_suppression
+from src.fancy_suppression import optimize_adv_params
 from pilot_mask_guided import apply_boundary_suppression
 
 
@@ -143,18 +143,21 @@ def main():
             print(f"  [skip] load failed")
             continue
 
-        # Apply AdvOpt
-        edited_frames, info = apply_adv_opt_suppression(
-            frames, masks,
-            ring_width=args.ring_width,
-            blend_alpha=args.blend_alpha,
+        # Apply AdvOpt: first-frame adaptation, then apply to all frames
+        import numpy as _np
+        first_mask = next((m for m in masks if _np.asarray(m).sum() > 0), masks[0])
+        first_frame = frames[0]
+        opt_rw, opt_alpha = optimize_adv_params(
+            first_frame, first_mask,
             n_iter=args.adv_n_iter,
             ssim_floor=args.ssim_floor,
             device=device,
         )
-        opt_rw = info.get("ring_width", args.ring_width)
-        opt_alpha = info.get("blend_alpha", args.blend_alpha)
         print(f"  adv_opt: rw={opt_rw}, α={opt_alpha:.3f}")
+        edited_frames = [
+            apply_boundary_suppression(f, m, ring_width=opt_rw, blend_alpha=opt_alpha)
+            for f, m in zip(frames, masks)
+        ]
 
         # Also compute idea1 baseline for comparison
         idea1_frames = [
