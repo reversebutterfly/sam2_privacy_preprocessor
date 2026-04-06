@@ -1,0 +1,47 @@
+\documentclass[10pt]{article}
+
+\usepackage{iclr2025_conference}
+\input{math_commands.tex}
+
+% Additional packages
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{cleveref}
+\usepackage{subcaption}
+\usepackage{multirow}
+\usepackage{makecell}
+\usepackage{xspace}
+
+% Title
+\title{H.264 Codec as an Adversarial Purifier:\\
+       A Systematic Negative Result on Pixel-Constrained\\
+       Attacks Against SAM2 Video Tracking}
+
+\author{
+  Anonymous Authors\\
+  \textit{For blind review}
+}
+
+\begin{document}
+\emergencystretch=2em
+
+\maketitle
+
+\begin{abstract}
+  \input{sections/abstract.tex}
+\end{abstract}
+
+\input{sections/introduction.tex}
+\input{sections/background.tex}
+\input{sections/related.tex}
+\input{sections/attacks.tex}
+\input{sections/pixel_experiments.tex}
+\input{sections/feature_experiments.tex}
+\input{sections/analysis.tex}
+\input{sections/discussion.tex}
+\input{sections/conclusion.tex}
+
+\bibliographystyle{abbrvnat}
+\bibliography{references}
+
+\end{document}

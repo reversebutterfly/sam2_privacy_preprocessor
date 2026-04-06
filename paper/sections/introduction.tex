@@ -1,0 +1,24 @@
+\section{Introduction}
+\label{sec:intro}
+
+Video datasets underpin advances in computer vision, but their publication raises privacy concerns when subjects have not consented to automated tracking. SAM2~\citep{ravi2024sam2} has emerged as a high-accuracy, promptable video segmentation and tracking system that third parties can readily use to extract subject trajectories from published data. A natural defense is a \emph{publisher-side video preprocessor}: a system that adds visually imperceptible perturbations to video frames before release, causing SAM2 to fail on any queried object while preserving the utility of the video for other research tasks.
+
+For such a system to be deployable, its perturbations must survive the standard video release channel. Video datasets are almost universally compressed with H.264 (or H.265) codec before distribution---YouTube, Vimeo, and most institutional repositories apply CRF 23 by default, achieving 38--42 dB PSNR while discarding high-frequency spatial content. This codec step is not optional: it is the mechanism by which large video corpora are made practically distributable.
+
+The central question of this paper is therefore: \textbf{can pixel-constrained adversarial perturbations survive H.264 CRF23 and disrupt SAM2 video tracking?}
+
+We conducted seven experiments across two attack paradigms and four candidate insertion points to answer this question. Within the $\varepsilon = 8/255$ L$_\infty$ budget, the answer is \textbf{no}. Every tested strategy---from end-to-end learned pixel-level CNN preprocessors to feature-space direct optimization targeting SAM2's memory encoder and object pointer tokens---produced near-zero tracking disruption after CRF23 compression.
+
+\paragraph{Contributions.}
+\begin{enumerate}
+  \item We present the first systematic study of \emph{codec robustness} for adversarial attacks against SAM2 video tracking, covering pixel-level and feature-space strategies across four attack insertion points.
+  \item We document a striking separation: attacks that devastate SAM2 tracking without codec ($\djfadv$ up to $+0.87$) fail completely after CRF23 ($\djfauc \approx 0$). We term this the \emph{codec-kill} phenomenon.
+  \item We hypothesize and discuss the root cause as the high-frequency concentration of $L_\infty$-constrained perturbations and their interaction with DCT quantization in H.264, and identify the key open question: whether BPDA/EOT-style codec-aware optimization can overcome this barrier.
+  \item We establish that, for the tested direct-optimization attacks, the \emph{optimizer is not the bottleneck}: the per-video Adam optimization finds effective perturbations (e.g., $\djfadv = +0.867$ on the bus video); the codec then destroys them. This provides evidence against the hypothesis that stronger gradient-based optimization alone would recover codec robustness within $\varepsilon = 8/255$.
+\end{enumerate}
+
+\paragraph{Why this matters.}
+Prior adversarial attack papers against video segmentation~\citep{uap_sam2_2025,darksam2024} evaluate under standard (codec-free) conditions. Our finding suggests these results may not transfer to real deployment pipelines. Adversarial robustness benchmarks and privacy tool evaluations in video settings should include codec compression as a standard evaluation condition.
+
+\paragraph{Paper organization.}
+\cref{sec:background} covers SAM2 architecture, H.264 compression, and the threat model. \cref{sec:related} reviews related work. \cref{sec:attacks} describes both attack paradigms. \cref{sec:pixel_exps} presents pixel-level results. \cref{sec:feature_exps} presents feature-space results. \cref{sec:analysis} analyzes the codec-kill mechanism. \cref{sec:discussion} discusses implications and limitations.

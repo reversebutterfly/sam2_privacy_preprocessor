@@ -1,0 +1,45 @@
+\contentsline {section}{\numberline {1}引言}{3}{section.1}%
+\contentsline {paragraph}{主要贡献：}{3}{paragraph*.2}%
+\contentsline {section}{\numberline {2}方法}{3}{section.2}%
+\contentsline {subsection}{\numberline {2.1}问题设置}{3}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}核心操作：边界环抑制（Boundary Ring Suppression）}{4}{subsection.2.2}%
+\contentsline {paragraph}{步骤一：边界环提取}{4}{paragraph*.3}%
+\contentsline {paragraph}{步骤二：局部背景代理色提取}{4}{paragraph*.4}%
+\contentsline {paragraph}{步骤三：羽化混合}{4}{paragraph*.5}%
+\contentsline {subsection}{\numberline {2.3}方法变体}{4}{subsection.2.3}%
+\contentsline {subsection}{\numberline {2.4}探索过程中的失败尝试}{5}{subsection.2.4}%
+\contentsline {paragraph}{（一）像素级 $L_\infty $ 对抗扰动}{5}{paragraph*.6}%
+\contentsline {paragraph}{（二）idea2 回声轮廓操作的失败}{5}{paragraph*.7}%
+\contentsline {paragraph}{（三）参数调优权衡}{5}{paragraph*.8}%
+\contentsline {paragraph}{启示：}{5}{paragraph*.9}%
+\contentsline {subsection}{\numberline {2.5}编解码器放大机制}{5}{subsection.2.5}%
+\contentsline {section}{\numberline {3}实验}{5}{section.3}%
+\contentsline {subsection}{\numberline {3.1}实验设置}{5}{subsection.3.1}%
+\contentsline {paragraph}{数据集：}{5}{paragraph*.10}%
+\contentsline {paragraph}{追踪器：}{6}{paragraph*.11}%
+\contentsline {paragraph}{编解码器：}{6}{paragraph*.12}%
+\contentsline {paragraph}{评估指标：}{6}{paragraph*.13}%
+\contentsline {paragraph}{实验平台：}{6}{paragraph*.14}%
+\contentsline {subsection}{\numberline {3.2}主实验结果（SAM2，DAVIS 全集，$n=88$）}{6}{subsection.3.2}%
+\contentsline {paragraph}{分析：}{6}{paragraph*.16}%
+\contentsline {paragraph}{编解码器放大量化：}{7}{paragraph*.17}%
+\contentsline {subsection}{\numberline {3.3}跨编解码器泛化（H.265/HEVC）}{7}{subsection.3.3}%
+\contentsline {paragraph}{分析：}{7}{paragraph*.19}%
+\contentsline {subsection}{\numberline {3.4}鲁棒性分析：自适应反制处理}{7}{subsection.3.4}%
+\contentsline {paragraph}{分析：}{7}{paragraph*.21}%
+\contentsline {subsection}{\numberline {3.5}隐私敏感子集：Person-only（$n=50$）}{8}{subsection.3.5}%
+\contentsline {paragraph}{分析：}{8}{paragraph*.23}%
+\contentsline {subsection}{\numberline {3.6}跨追踪架构泛化（XMem）}{8}{subsection.3.6}%
+\contentsline {paragraph}{分析：}{8}{paragraph*.25}%
+\contentsline {paragraph}{启示：}{8}{paragraph*.26}%
+\contentsline {subsection}{\numberline {3.7}等效质量下的 Pareto 优越性（待补充）}{8}{subsection.3.7}%
+\contentsline {section}{\numberline {4}分析与讨论}{9}{section.4}%
+\contentsline {subsection}{\numberline {4.1}编解码器放大机制的理论分析}{9}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}持续逐帧编辑 vs.\ 单帧记忆投毒}{9}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}方法的局限性}{9}{subsection.4.3}%
+\contentsline {paragraph}{跨追踪器异质性：}{9}{paragraph*.28}%
+\contentsline {paragraph}{GT 掩码依赖：}{10}{paragraph*.29}%
+\contentsline {paragraph}{自适应白盒反制：}{10}{paragraph*.30}%
+\contentsline {paragraph}{评估数据集的局限：}{10}{paragraph*.31}%
+\contentsline {paragraph}{SSIM 的感知局限：}{10}{paragraph*.32}%
+\contentsline {section}{\numberline {5}结论}{10}{section.5}%

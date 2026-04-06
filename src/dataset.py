@@ -221,3 +221,130 @@ def load_single_video(
         masks.append(mask)
 
     return frames, masks, stems
+
+
+# ── YouTube-VOS loader ────────────────────────────────────────────────────────
+
+def load_single_video_ytvos(
+    ytvos_root: str,
+    video_id: str,
+    obj_id: int = 1,
+    split: str = "valid_all_frames",
+    anno_split: str = "valid",
+    max_frames: int = -1,
+) -> Tuple[List[np.ndarray], List[np.ndarray], List[str]]:
+    """
+    Load all frames and per-frame masks for a single YouTube-VOS video.
+
+    YouTube-VOS uses sparse annotations: only a subset of frames have GT masks
+    (typically every 5th frame in the annotated split).  Unannotated frames
+    return zero masks.  SAM2 is initialised with a first-frame prompt, so the
+    zero-mask frames are fine for the tracking pipeline.
+
+    Expected directory layout::
+
+        <ytvos_root>/
+          valid_all_frames/
+            JPEGImages/<video_id>/<frame>.jpg   ← all frames (dense)
+          valid/
+            Annotations/<video_id>/<frame>.png  ← sparse GT masks
+            meta.json                           ← object catalogue
+
+    Object palette mapping is resolved via meta.json (object IDs 1, 2, … are
+    mapped to their actual palette indices).  Pass ``obj_id=1`` for the first
+    annotated object.
+
+    Args:
+        ytvos_root:  path to the YouTube-VOS root directory
+        video_id:    video folder name (e.g. '003234408d')
+        obj_id:      1-based object index within this video (1 = first object)
+        split:       sub-folder containing dense JPEG frames
+                     ('valid_all_frames' or 'train')
+        anno_split:  sub-folder containing sparse annotations ('valid' or 'train')
+        max_frames:  cap on number of frames loaded (-1 = all)
+
+    Returns:
+        frames: list of [H, W, 3] uint8 RGB arrays
+        masks:  list of [H, W] uint8 binary arrays (1=object, 0=background)
+        stems:  list of frame stem strings (e.g. '00000', '00005', ...)
+    """
+    import json as _json
+
+    ytvos_root = Path(ytvos_root)
+    img_dir    = ytvos_root / split      / "JPEGImages"  / video_id
+    anno_dir   = ytvos_root / anno_split / "Annotations" / video_id
+
+    if not img_dir.exists():
+        return [], [], []
+
+    stems = sorted(
+        p.stem for p in img_dir.iterdir()
+        if p.suffix.lower() in (".jpg", ".jpeg")
+    )
+    if max_frames > 0:
+        stems = stems[:max_frames]
+
+    # Resolve palette index for this object via meta.json
+    palette_idx = obj_id  # fallback: use obj_id directly as palette value
+    meta_path = ytvos_root / anno_split / "meta.json"
+    if meta_path.exists():
+        with open(meta_path) as f:
+            meta = _json.load(f)
+        vid_meta = meta.get("videos", {}).get(video_id, {})
+        obj_keys = sorted(
+            vid_meta.get("objects", {}).keys(), key=lambda x: int(x)
+        )
+        if 0 <= obj_id - 1 < len(obj_keys):
+            palette_idx = int(obj_keys[obj_id - 1])
+
+    frames, masks = [], []
+    for stem in stems:
+        frame = np.array(Image.open(img_dir / f"{stem}.jpg").convert("RGB"))
+        frames.append(frame)
+
+        anno_path = anno_dir / f"{stem}.png"
+        if anno_path.exists():
+            anno = np.array(Image.open(anno_path))
+            mask = (anno == palette_idx).astype(np.uint8)
+        else:
+            mask = np.zeros(frame.shape[:2], dtype=np.uint8)
+        masks.append(mask)
+
+    return frames, masks, stems
+
+
+def list_ytvos_videos(
+    ytvos_root: str,
+    split: str = "valid_all_frames",
+    anno_split: str = "valid",
+    min_annotated_frames: int = 1,
+) -> List[str]:
+    """
+    Return a sorted list of YouTube-VOS video IDs that have at least
+    ``min_annotated_frames`` annotation PNG files.
+
+    Args:
+        ytvos_root:            path to the YouTube-VOS root
+        split:                 sub-folder with JPEG images
+        anno_split:            sub-folder with annotations
+        min_annotated_frames:  minimum number of annotated frames required
+
+    Returns:
+        list of video_id strings
+    """
+    img_root  = Path(ytvos_root) / split      / "JPEGImages"
+    anno_root = Path(ytvos_root) / anno_split / "Annotations"
+
+    if not img_root.exists():
+        return []
+
+    result = []
+    for d in sorted(img_root.iterdir()):
+        if not d.is_dir():
+            continue
+        vid = d.name
+        anno_dir = anno_root / vid
+        n_anno   = len(list(anno_dir.glob("*.png"))) if anno_dir.exists() else 0
+        if n_anno >= min_annotated_frames:
+            result.append(vid)
+    return result

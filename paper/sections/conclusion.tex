@@ -1,0 +1,10 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+We investigated whether pixel-constrained adversarial perturbations ($\varepsilon = 8/255$) can survive H.264 CRF23 to disrupt SAM2 video object tracking---a key requirement for publisher-side privacy protection. Through seven systematic experiments covering pixel-level CNN preprocessors and three feature-space optimization modes, we find a clear and consistent negative result within the tested attack families: H.264 CRF23 is an effective adversarial purifier that reduces attack effectiveness by 96--100\% in all tested configurations.
+
+The most striking evidence is the bus video case study: a single-frame perturbation that collapses SAM2 tracking from 93.5\% to 6.8\% JF score (without codec) produces zero practical effect after H.264 encoding. The optimizer is not the limiting factor---it finds effective perturbations. The codec destroys them.
+
+We identify the root cause as the high-frequency concentration of $L_\infty$-constrained perturbations, which are exactly the frequency components removed by DCT quantization in H.264 CRF23. Feature-space attacks targeting SAM2's lower-resolution memory representations do not escape this limitation, because the pixel-space gradient that drives them retains the same high-frequency structure.
+
+Our results call for two changes in practice: (1) adversarial attack papers targeting video should include real-codec evaluation, and (2) adversarial privacy tool developers should treat codec robustness as a first-class design constraint rather than an afterthought. Within the current $\varepsilon = 8/255$ framework and the tested attack families, the codec appears to be an insurmountable barrier for gradient-based optimization without true end-to-end differentiability through the codec.

@@ -1,0 +1,99 @@
+\begin{thebibliography}{14}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Anonymous(2025)]{uap_sam2_2025}
+Anonymous.
+\newblock {Universal Adversarial Perturbations for SAM2 Video Object
+  Segmentation}.
+\newblock In \emph{NeurIPS}, 2025.
+\newblock arXiv:2510.24195.
+
+\bibitem[Athalye et~al.(2018)Athalye, Carlini, and
+  Wagner]{athalye2018obfuscated}
+A.~Athalye, N.~Carlini, and D.~Wagner.
+\newblock {Obfuscated Gradients Give a False Sense of Security: Circumventing
+  Defenses to Adversarial Examples}.
+\newblock In \emph{ICML}, 2018.
+
+\bibitem[Guo et~al.(2018)Guo, Rana, Cisse, and van~der
+  Maaten]{guo2018countering}
+C.~Guo, M.~Rana, M.~Cisse, and L.~van~der Maaten.
+\newblock {Countering Adversarial Images using Input Transformations}.
+\newblock In \emph{ICLR}, 2018.
+
+\bibitem[Kurakin et~al.(2017)Kurakin, Goodfellow, and
+  Bengio]{kurakin2016adversarial}
+A.~Kurakin, I.~J. Goodfellow, and S.~Bengio.
+\newblock {Adversarial Examples in the Physical World}.
+\newblock In \emph{ICLR Workshop}, 2017.
+
+\bibitem[McPherson et~al.(2016)McPherson, Shokri, and
+  Shmatikov]{mcpherson2016defeating}
+R.~McPherson, R.~Shokri, and V.~Shmatikov.
+\newblock {Defeating Image Obfuscation with Deep Learning}.
+\newblock In \emph{arXiv preprint arXiv:1609.00408}, 2016.
+
+\bibitem[Nie et~al.(2022)Nie, Guo, Huang, Xiao, Vahdat, and
+  Anandkumar]{diffpure2022}
+W.~Nie, B.~Guo, Y.~Huang, C.~Xiao, A.~Vahdat, and A.~Anandkumar.
+\newblock {Diffusion Models for Adversarial Purification}.
+\newblock In \emph{ICML}, 2022.
+
+\bibitem[Ravi et~al.(2024)Ravi, Gabeur, Hu, Hu, Ryali, Ma, Khedr, R{\"a}dle,
+  Rolland, Gustafson, Mintun, Pan, Alwala, Carion, Wu, Girshick, Doll{\'a}r,
+  and Feichtenhofer]{ravi2024sam2}
+N.~Ravi, V.~Gabeur, Y.-T. Hu, R.~Hu, C.~Ryali, T.~Ma, H.~Khedr, R.~R{\"a}dle,
+  C.~Rolland, L.~Gustafson, E.~Mintun, J.~Pan, K.~V. Alwala, N.~Carion, C.-Y.
+  Wu, R.~Girshick, P.~Doll{\'a}r, and C.~Feichtenhofer.
+\newblock {SAM 2: Segment Anything in Images and Videos}.
+\newblock \emph{arXiv preprint arXiv:2408.00714}, 2024.
+
+\bibitem[Ryali et~al.(2023)Ryali, Hu, Bolya, Wei, Fan, Huang, Aggarwal,
+  Chowdhury, Poursaeed, Hoffman, Malik, Li, and Feichtenhofer]{ryali2023hiera}
+C.~Ryali, Y.-T. Hu, D.~Bolya, C.~Wei, H.~Fan, P.-Y. Huang, V.~Aggarwal,
+  A.~Chowdhury, O.~Poursaeed, J.~Hoffman, J.~Malik, Y.~Li, and
+  C.~Feichtenhofer.
+\newblock {Hiera: A Hierarchical Vision Transformer without the
+  Bells-and-Whistles}.
+\newblock In \emph{ICML}, 2023.
+
+\bibitem[Shan et~al.(2020)Shan, Wenger, Zhang, Li, Zheng, and
+  Zhao]{shan2020fawkes}
+S.~Shan, E.~Wenger, J.~Zhang, H.~Li, H.~Zheng, and B.~Y. Zhao.
+\newblock {Fawkes: Protecting Privacy against Unauthorized Deep Learning
+  Models}.
+\newblock In \emph{USENIX Security}, 2020.
+
+\bibitem[Tram{\`e}r et~al.(2020)Tram{\`e}r, Carlini, Brendel, and
+  Madry]{tramer2020adaptive}
+F.~Tram{\`e}r, N.~Carlini, W.~Brendel, and A.~Madry.
+\newblock {Adaptive Attacks: Are You Breaking It or Not?}
+\newblock In \emph{NeurIPS}, 2020.
+
+\bibitem[Veerabadran et~al.(2023)Veerabadran, Vidyashankar, Goh, Poh, and
+  He]{rovisq2023}
+V.~Veerabadran, N.~Vidyashankar, G.~Goh, Z.~E. Poh, and T.~He.
+\newblock {RoVISQ: Reduction of Video Quality after Visual Adversarial
+  Attacks}.
+\newblock In \emph{NDSS}, 2023.
+
+\bibitem[Wu et~al.(2023)Wu, Yang, He, Su, and Fan]{advcloak}
+X.~Wu, X.~Yang, Y.~He, B.~Su, and J.~Fan.
+\newblock {AdvCloak: Customized Adversarial Cloak for Privacy Protection}.
+\newblock \emph{arXiv preprint arXiv:2306.09402}, 2023.
+
+\bibitem[Yoon et~al.(2021)Yoon, Hwang, and Lee]{yoon2021adv_purification}
+J.~Yoon, S.~J. Hwang, and J.~Lee.
+\newblock {Adversarial Purification with Score-based Generative Models}.
+\newblock In \emph{ICML}, 2021.
+
+\bibitem[Zhang et~al.(2024)Zhang, Wu, Li, Xu, and Guo]{darksam2024}
+Z.~Zhang, B.~Wu, Z.~Li, C.~Xu, and W.~Guo.
+\newblock {DarkSAM: Fooling Segment Anything Model to Segment Nothing}.
+\newblock In \emph{NeurIPS}, 2024.
+
+\end{thebibliography}

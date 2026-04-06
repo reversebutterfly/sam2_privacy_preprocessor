@@ -23,12 +23,14 @@ This project implements a SAM2 privacy preprocessor.
 - Local ffmpeg: C:\ffmpeg\bin\ffmpeg.exe
 
 ## Remote Server
-- SSH: ssh -p 6100 2025M_LvShaoting@183.175.157.242
+- SSH alias: `lvshaoting-gpu` (configured in C:/Users/glitterrr/.ssh/config with key aris_ed25519)
+- Connect: `ssh lvshaoting-gpu` (no password needed, key auth)
+- Home directory: /IMBR_Data/Student-home/2025M_LvShaoting
+- Code directory: /IMBR_Data/Student-home/2025M_LvShaoting/sam2_privacy_preprocessor
 - GPUs: unknown (check with nvidia-smi after login)
 - Primary target GPU type: Tesla V100
 - Conda env: sam2_privacy_preprocessor
 - Activate: eval "$(/opt/conda/bin/conda shell.bash hook)" && conda activate sam2_privacy_preprocessor
-- Code directory: /home/2025M_LvShaoting/sam2_privacy_preprocessor
 - Use screen or tmux for long-running jobs
 - Assume Linux shell on the remote server
 

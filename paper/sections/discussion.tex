@@ -1,0 +1,39 @@
+\section{Discussion, Limitations, and Implications}
+\label{sec:discussion}
+
+\subsection{Implications for Privacy-Preserving Video}
+
+Our findings place a fundamental constraint on the adversarial approach to publisher-side privacy protection for SAM2-based tracking. Within the $\varepsilon = 8/255$ L$_\infty$ budget, the standard video release pipeline (H.264 CRF23) acts as an effective adversarial purifier that the attacker cannot overcome with current gradient-based methods. Future work in this direction should consider:
+
+\begin{itemize}
+  \item \textbf{Larger $\varepsilon$}: At sufficient perturbation magnitude, low-frequency pixel energy would survive codec. However, the SSIM and LPIPS constraints would also be violated, making the perturbation visible. The exact crossover point is an open question.
+  \item \textbf{Semantic-level perturbations}: Perturbations that directly modify low-frequency video statistics (e.g., color distribution, spatial composition) may survive codec at lower $\varepsilon$, at the cost of changing video appearance more dramatically.
+  \item \textbf{Alternative codecs}: VP9 and H.265 have different quantization profiles. CRF23 H.264 is the most relevant for practical video distribution, but robustness may differ across codec settings.
+\end{itemize}
+
+\subsection{Implications for Adversarial Robustness Evaluation}
+
+Our results suggest that adversarial attacks against video segmentation and tracking should be evaluated under real codec conditions. UAP-SAM2~\citep{uap_sam2_2025}, DarkSAM~\citep{darksam2024}, and related work report results under standard (codec-free) conditions. If these systems are intended for deployment in real video pipelines, their attack effectiveness may be substantially reduced by the codec that is an unavoidable part of video distribution.
+
+We recommend that video adversarial attack papers include a ``post-codec'' column in their main results tables, using real FFmpeg H.264 CRF23 (or the target deployment codec) rather than a differentiable proxy. Our differentiable proxy (YUV 4:2:0 + blur + noise + resize) is a reasonable training augmentation but is not a faithful evaluation substitute for real H.264.
+
+\subsection{Limitations}
+
+\paragraph{Single backbone.} All experiments use SAM2.1 hiera\_tiny. Larger models (SAM2-Small, SAM2-Large) have different feature-space characteristics and may exhibit different codec-robustness behavior.
+
+\paragraph{Small validation set.} Nine DAVIS videos provide clear trends but limited statistical power. Multi-dataset validation (YT-VOS, MOSE) would strengthen the negative result.
+
+\paragraph{Surrogate gap in pixel-level attacks.} The pixel-level training surrogate uses \texttt{logits.detach()} and a single rolling memory entry, approximating but not exactly replicating the full SAM2VideoPredictor computation graph. We cannot rule out that exact end-to-end gradient flow would produce different results, though the feature-space direct optimization experiments (which are closer to exact local optimization) also fail.
+
+\paragraph{Dataset selection bias.} The validity filter ($\text{JF}_\text{clean} \geq 0.5$) retains 9 DAVIS videos where SAM2 tracks well under clean conditions. Harder videos (lower $\text{JF}_\text{clean}$) might exhibit different codec-robustness dynamics; however, they also represent less relevant attack targets (if SAM2 already fails cleanly, perturbing them provides no privacy benefit).
+
+\paragraph{Single CRF setting.} Results are for CRF23. Very high quality (CRF18) would attenuate less; lower quality (CRF28) would attenuate more. A sweep across CRF values would strengthen the characterization of codec attenuation as a function of compression strength. CRF23 is the most practically relevant setting for public video distribution.
+
+\paragraph{Adaptive codec-aware optimization (most important limitation).}
+Our differentiable H.264 proxy is used as a \emph{training regularizer}, not as a fully differentiable codec. A truly adaptive attacker with access to BPDA-style gradients~\citep{athalye2018obfuscated} through the real codec, or EOT-style robustness via compression augmentation, might produce perturbations with more low-frequency structure. We note that our feature-space direct optimization already uses the proxy during optimization, yet still fails; however, we cannot rule out that a more faithful gradient estimator through real H.264 would yield different results. This is the most important open question following from our work.
+
+\paragraph{Scope.} This is not an impossibility proof. We have shown that specific attack families fail within $\varepsilon = 8/255$. A fundamentally different attack paradigm—including stronger adaptive optimization, larger budgets, or semantic-level manipulation—might succeed.
+
+\subsection{Connection to Adversarial Purification}
+
+The codec-kill phenomenon we document is conceptually related to adversarial purification~\citep{yoon2021adv_purification,diffpure2022}, where a preprocessing step (typically a generative model) removes adversarial perturbations before the target classifier. Our finding shows this purification can occur ``for free'' as a side effect of lossy video compression. This has implications for the broader question of natural robustness: if a compression channel exists in the deployment pipeline, adversarial perturbations optimized for the pre-compression distribution may fail catastrophically in the post-compression regime.

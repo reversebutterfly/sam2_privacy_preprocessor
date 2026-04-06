@@ -1,0 +1,42 @@
+\section{Pixel-Level Attack: Four Rounds of Development}
+\label{sec:pixel_exps}
+
+We developed the pixel-level CNN preprocessor through four iterative rounds, each addressing critical flaws identified by systematic review. This iterative process strengthens the negative result: the failure persists even after extensive engineering effort.
+
+\subsection{Round 1: Initial System (Score 2/10)}
+The initial system trained $g_\theta$ against SAM2's \emph{image} predictor (per-frame fresh prompt), then evaluated against SAM2's \emph{video} predictor (first-frame prompt with memory propagation). This train/eval mismatch was the primary cause of failure: $g_\theta$ learned frame-local artifacts that do not transfer to the video tracking scenario.
+
+Results: image predictor $\Delta\text{JF} \approx 0.44$ (strong), video predictor post-codec $\Delta\text{JF}_\text{codec} \approx +0.004$ (near-zero).
+
+\subsection{Round 2: Clip Training + Codec Proxy (Score 3/10)}
+Key fixes: (1) clip-level cascaded training (frame 0 with GT centroid prompt, frames 1+ with previous predicted soft mask), (2) averaging all valid videos including negative deltas, (3) SSIM hinge constraint, (4) YUV 4:2:0 chroma subsampling in the differentiable codec proxy.
+
+Image predictor $\Delta\text{JF}$ remained strong ($+0.417$), but post-codec video predictor: mean $\djfcodec \approx +0.008$ (still near-zero on valid subset).
+
+\subsection{Round 3: Full Memory Attention Path (Score 4/10)}
+Fix: added $\texttt{memory\_attention}()$ call in the training surrogate, including proper attention between current features and stored memory bank. Also fixed CRF reporting and added a validity filter ($\text{JF}_\text{clean} \geq 0.5$).
+
+Valid-subset results (C2 checkpoint): mean $\djfadv = +0.010$, mean $\djfcodec = +0.004$.
+
+\subsection{Round 4: Object Pointers + Temporal Encoding (Score 5/10)}
+\label{sec:round4}
+Final fix: added object pointer tokens appended into memory attention (with correct $\texttt{num\_obj\_ptr\_tokens}$ parameter), temporal positional encoding ($\texttt{maskmem\_tpos\_enc}$ and $\texttt{obj\_ptr\_tpos\_proj}$), and video-predictor validation during training.
+
+\paragraph{Apparent breakthrough and its resolution.}
+Training validation at step 4000 showed val-vid $\djf = 0.456$---a dramatic apparent success. Careful investigation revealed this was a \textbf{resolution amplification artifact}: the quick-eval function downscaled 1024$\times$1024 adversarial frames to 480$\times$270 before SAM2, effectively amplifying the perturbation by $4\times$ spatial area compression. True evaluation at original resolution showed $\djfcodec = +0.004$---consistent with all prior rounds.
+
+\paragraph{Final results (C2-eval, 9 valid videos, CRF23).}
+\begin{center}
+\small
+\begin{tabular}{lcccc}
+\toprule
+Metric & Mean & Std \\
+\midrule
+$\djfadv$ (no codec) & $+0.010$ & $0.029$ \\
+$\djfcodec$ (CRF23) & $+0.004$ & $0.021$ \\
+SSIM frame-0 & $0.954$ & $0.006$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The pixel-level approach satisfies all perceptual constraints (SSIM $\geq 0.95$) but produces no meaningful tracking disruption after CRF23.

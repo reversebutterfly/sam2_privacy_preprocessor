@@ -1,0 +1,54 @@
+\section{Background}
+\label{sec:background}
+
+\subsection{SAM2 Video Architecture}
+\label{sec:sam2}
+
+SAM2~\citep{ravi2024sam2} processes video through a hierarchical image encoder (Hiera~\citep{ryali2023hiera}) producing multi-scale features at four stages with channel widths $[96, 192, 384, 768]$. An FPN neck produces 256-dim features at multiple spatial resolutions, with the finest level at $64 \times 64$ spatial tokens.
+
+For video tracking, SAM2 maintains a \emph{streaming memory bank} of up to 7 past frames. At each tracked frame, a memory encoder compresses the current prediction into:
+\begin{itemize}
+  \item \textbf{Maskmem features} $M_t \in \RR^{N_m \times 64}$ (flattened from $8 \times 8$ spatial tokens): the primary spatial memory written to the bank.
+  \item \textbf{Object pointer} $p_t \in \RR^{256}$: a compact object identity token extracted from the mask decoder's output.
+\end{itemize}
+
+At each subsequent frame, a \emph{memory attention} module applies cross-attention from current spatial tokens to the memory bank, conditioning the mask decoder on stored object history. Frame 0 seeds this entire state---its memory write determines the initial retrieval key used by all later frames.
+
+This architecture creates a natural attack surface: if the adversarial perturbation on frame 0 corrupts the written memory state $M_0$ or pointer $p_0$ in a way that persists after codec compression, downstream tracking should fail.
+
+\subsection{H.264 Video Codec}
+\label{sec:codec}
+
+H.264 (libx264) applies lossy compression via block-based DCT followed by scalar quantization. At CRF 23 (the default for YouTube and most video distribution platforms), the quantization step size is calibrated to achieve 38--42 dB PSNR on natural video.
+
+The key property for adversarial robustness is that \textbf{DCT quantization removes high-frequency spatial content}. Adversarial perturbations constrained to $\|\delta\|_\infty \leq \varepsilon$ tend to concentrate in high-frequency patterns, since these minimize perceptual visibility (they are harder to see against textured backgrounds). At CRF 23, these high-frequency perturbation components are quantized to zero.
+
+This creates a fundamental tension: the perturbation budget ($\varepsilon = 8/255 \approx 3.1\%$ pixel value) is shared between the adversarial signal (which needs high-frequency structure for effectiveness) and the codec survival requirement (which demands low-frequency structure).
+
+\subsection{Threat Model}
+\label{sec:threat}
+
+\paragraph{Setting.} A dataset publisher wants to prevent a third-party adversary from using SAM2 to automatically track subjects in published video. The publisher applies a preprocessor to each video before release; the video is then compressed with H.264 CRF23 during release; the adversary downloads the compressed video and runs SAM2 with a first-frame point prompt.
+
+\paragraph{Constraints on the preprocessor.}
+\begin{itemize}
+  \item $L_\infty$ pixel budget: $\|\delta\|_\infty \leq \varepsilon = 8/255$
+  \item SSIM $\geq 0.90$ (structural similarity preserved)
+  \item LPIPS $\leq 0.10$ (perceptual distance bounded)
+\end{itemize}
+
+\paragraph{Success criterion.} We define tracking degradation as:
+\begin{align}
+  \djf &= \text{JF}_\text{clean} - \text{JF}_\text{measured}
+\end{align}
+where JF is the standard DAVIS J\&F metric (region similarity + boundary accuracy), ranging from 0 (no tracking) to 1 (perfect). \textbf{Sign convention:} $\djf > 0$ means the measured JF is lower than clean---i.e., the attack degrades tracking (larger is better for the attacker). A \emph{valid} video requires $\text{JF}_\text{clean} \geq 0.5$. Note: this filter selects videos where SAM2 tracks well without perturbation; results on easier videos may differ.
+
+The primary metric is:
+\begin{align}
+  \djfauc &= \text{JF}_\text{clean-codec} - \text{JF}_\text{adv-codec}
+\end{align}
+where ``clean-codec'' = clean frames encoded with H.264 CRF23 and decoded, ``adv-codec'' = adversarial frames encoded with H.264 CRF23 and decoded. This metric isolates attack damage from the codec's own effect on tracking. $\djfauc > 0$ means the adversarial video tracks worse than the clean codec baseline---a positive value indicates successful attack survival through the codec.
+
+The \textbf{proceed threshold} is $\djfauc \geq 0.05$; the \textbf{kill threshold} is $\djfauc < 0.03$.
+
+\paragraph{Evaluation.} All results use DAVIS 2017 validation set (9 videos with $\text{JF}_\text{clean} \geq 0.5$), official \texttt{SAM2VideoPredictor} with first-frame GT centroid point prompt, and real FFmpeg H.264 encode/decode at CRF 23.

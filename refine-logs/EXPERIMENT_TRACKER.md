@@ -165,26 +165,107 @@ rw=24, α=0.8 is confirmed near-optimal.
 
 ---
 
+## Completed Analysis Experiments (2026-03-31)
+
+| Run ID | Script | Description | Result | Status |
+|--------|--------|-------------|--------|--------|
+| MG-GATE-BD | compute_gate.py | boundary_dominance gate on YT-VOS | FAILS: coverage=1.6%, wrong feature | **DONE** |
+| MG-GATE-RB | scripts/analyze_gate.py | ring_burden gate sweep on YT-VOS (p80) | **coverage=20%, +7.9pp, neg_rate=11%** | **DONE ★** |
+| MG-TRANS | scripts/run_ytvos_transfer.sh | YT-VOS train/test split + 3 config sweep | Running on server... | **RUNNING** |
+
+### Gate Key Results (ring_burden feature, all 497 YT-VOS videos)
+
+| Threshold | Coverage | n | ΔJF_codec | Neg_rate |
+|-----------|----------|---|-----------|----------|
+| All videos (no gate) | 100% | 497 | +4.0pp | 29% |
+| p70 ring_burden ≥ 1.552 | 30% | 149 | +7.0pp | 11% |
+| p80 ring_burden ≥ 1.974 | **20%** | **100** | **+7.9pp** | **11%** |
+| p85 ring_burden ≥ 2.269 | 15% | 75 | +8.5pp | 8% |
+| p90 ring_burden ≥ 2.529 | 10% | 50 | +9.7pp | 6% |
+
+**Interpretation**: ring_burden (ring pixels / mask pixels) captures "boundary-dominant" objects. Top-20% subset achieves +7.9pp with 11% backfire — viable operating regime on YT-VOS. Still much weaker than DAVIS (+16.4pp, 0% backfire, 100% coverage) → genuine content-conditioned scope limitation.
+
+**boundary_dominance gate**: ANTI-CORRELATED with success in YT-VOS (r=-0.076). Used wrong feature initially. ring_burden is the correct predictor (r=+0.272).
+
+---
+
+## UAP-SAM2 Strict Reproduction (2026-03-31)
+
+| Run ID | Script | Description | Result | Status |
+|--------|--------|-------------|--------|--------|
+| UAP-SETUP | scripts/setup_uap_repro2.sh | Clone repo, download SAM2 1.0 ckpt, verify imports | ALL 6/6 imports OK, SAM2 1.0 loaded (38.9M params) | **DONE ✓** |
+| UAP-TRAIN | scripts/run_uap_repro.sh | Official uap_attack.py (paper settings) | Running on server (screen: uap_run, ~4-6h) | **RUNNING** |
+| UAP-EVAL | uap_atk_test.py | Official eval — mIoU clean/adv | Pending train completion | **PENDING** |
+
+### Reproduction Environment
+- **Repo**: CGCL-codes/UAP-SAM2 commit `779ce0b7ebb8cc09fb712c46c555099f6a99e08f`
+- **Checkpoint**: SAM2 1.0 `sam2_hiera_tiny.pt` (38,946,242 params, downloaded fresh)
+- **Env**: UAP-SAM2 conda (Python 3.8.20, PyTorch 2.4.0+cu121, numpy==1.24.4 — exact match)
+- **GPU**: CUDA:1 (V100 32GB, as per hardcoded device in official code)
+
+### Training Settings (paper-exact)
+| Parameter | Value | Source |
+|-----------|-------|--------|
+| ε | 10/255 | paper |
+| α | 2/255 | paper |
+| P_num | 10 | paper |
+| prompts_num | 256 | attack_setting.py |
+| limit_img | 100 | paper |
+| limit_frames | 15 | paper |
+| fea_num | 30 | paper |
+| Losses | loss_t + loss_diff | paper (loss_fea excluded*) |
+| Dataset | YouTube-VOS train (3471 videos) | paper |
+| SAM2 | 1.0 hiera_tiny | paper |
+
+### Documented Deviations
+1. **SA-V data**: Server cannot access HuggingFace (network unreachable). SA-V substituted with YouTube-VOS valid frames for `selected_folders` initialization only. `--loss_fea` excluded (weight_fea=1e-6 anyway). Impact: negligible on final UAP.
+2. All other settings: paper-exact.
+
+### Paper Acceptance Target
+- Point-prompt YouTube-VOS: `miouadv ≈ 37.03%` (Table 2)
+- Pass band: ±2pp absolute (35–39%)
+- Clean baseline: `miouimg ≈ 82.8%`
+
+---
+
 ## Pending / Blocked
 
 | Item | Blocker | Priority for CCF-A |
 |------|---------|-------------------|
+| UAP-TRAIN result | Running on server (~4-6h) | HIGH |
+| MG-TRANS (YT-VOS transfer) | Running on server | HIGH |
 | UAP baseline on full DAVIS | Re-run B1a with fixed codec eval | MEDIUM |
 | VMAF full score | No libvmaf in conda ffmpeg | LOW |
 
 ---
 
-## Next Experiments (2026-03-30, from Research Review Rounds 4-5)
+## Completed Analysis Experiments (2026-03-30 evening)
 
-Required for ACM MM 2026 main track (score: 3/5 → 4/5):
+| Run ID | Script | Description | Result | Status |
+|--------|--------|-------------|--------|--------|
+| MG-COV | compute_covariates.py | 88 DAVIS + 497 YT-VOS covariates (ring_burden, boundary_dom, proxy_err) | 585 rows → results_v100/covariates.csv | **DONE** |
+| MG-REG | run_regression.py | OLS + logistic HC3, R²=0.28, dataset coef=-8.75pp (p<0.001) | results_v100/regression/*.csv | **DONE** |
+| MG-MINI | pilot_ytvos_mini.py | Scale-norm vs fixed on 25 YT-VOS videos | A:+0.52pp 37.5%neg / B:+3.60pp 33.3%neg | **DONE** |
+
+### Regression Key Results
+- **Base OLS** (JF_clean + dataset_binary): dataset coef = **-11.3pp** (p<0.001), R²=0.23
+- **Full OLS** (+ ring_burden + boundary_dom + proxy_err): dataset coef = **-8.75pp** (p<0.001), R²=0.28
+- **ΔR² = +5%** — covariates explain only 22% of the 11.3pp gap
+- **ring_burden**: significant (p<0.001), coef=+0.024
+- **boundary_dominance**: marginal (p=0.09), coef=-0.008
+- **proxy_err**: NOT significant (p=0.93)
+- **Logistic AUC**: 0.765 → 0.789 with full covariates
+
+### Interpretation (for paper Section 7)
+78% of the DAVIS/YT-VOS gap remains after controlling for 3 covariates → **content distribution is the primary driver**, not ring size mismatch or boundary complexity. Correct paper framing: "boundary-conditioned failure mode with limited cross-dataset transfer due to content shift (larger, low-boundary YT-VOS objects)"
+
+## Remaining Optional Experiments
 
 | Run ID | Script | Description | Priority | Est. Time |
 |--------|--------|-------------|----------|-----------|
-| MG-COV | compute_covariates.py | Compute ring_burden, boundary_dominance, proxy_err for DAVIS+YT-VOS | HIGH (CPU) | ~2-4h |
-| MG-REG | run_regression.py | Pooled OLS + logistic regression with HC3 SE | HIGH (CPU) | ~5min |
-| MG-GATE | compute_gate.py | Boundary-dominance gate fit + held-out eval | HIGH (CPU) | ~5min |
-| MG-SN1 | tune_scale_normalized.py + pilot_mask_guided.py | Scale-normalized rho∈{0.06,0.10,0.14}×alpha∈{0.6,0.8,0.9} on YT-VOS JF≥0.9 train | HIGH (GPU) | ~6h |
-| MG-CT1 | pilot_mask_guided.py (fixed configs) | Cross-transfer matrix: DAVIS-tuned→YT-VOS, YT-tuned→DAVIS | HIGH (GPU) | ~3h |
+| MG-GATE | compute_gate.py | Boundary-dominance gate fit + held-out eval | MEDIUM (CPU) | ~5min |
+| MG-SN1 | pilot_mask_guided.py + scale_norm flags | Scale-norm sweep rho∈{0.06,0.10,0.14} on YT-VOS JF≥0.9 | OPTIONAL (GPU) | ~6h |
+| MG-CT1 | pilot_mask_guided.py (fixed configs) | Cross-transfer DAVIS-tuned→YT-VOS eval | OPTIONAL (GPU) | ~3h |
 
 ### Run Order
 1. MG-COV first (CPU, no GPU needed, generates covariate CSV)

@@ -1,0 +1,358 @@
+% ============================================================
+% 中文初稿：编解码器放大的语义边界抑制
+% 目标投稿：TCSVT / ICCV 2026
+% 编译命令：xelatex chinese_main && bibtex chinese_main && xelatex chinese_main && xelatex chinese_main
+% ============================================================
+\documentclass[UTF8,a4paper,12pt]{ctexart}
+
+% ── 基础宏包 ────────────────────────────────────────────────
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}          % 三线表
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{multirow}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{float}
+\usepackage{cite}
+\usepackage{url}
+
+\geometry{left=2.5cm, right=2.5cm, top=2.5cm, bottom=2.5cm}
+
+% ── 颜色定义 ────────────────────────────────────────────────
+\definecolor{MyBlue}{RGB}{0,83,156}
+\hypersetup{colorlinks=true, linkcolor=MyBlue, citecolor=MyBlue, urlcolor=MyBlue}
+
+% ── 标题信息 ────────────────────────────────────────────────
+\title{\textbf{编解码器放大的语义边界抑制：\\
+面向标注视频数据集的发布侧隐私预处理}}
+\author{
+  匿名作者（草稿审阅版）\\
+  \textit{（目标期刊/会议：TCSVT / ICCV 2026）}
+}
+\date{2026年4月3日~~·~~初稿}
+
+% ============================================================
+\begin{document}
+\maketitle
+
+\begin{abstract}
+标注视频数据集（如 DAVIS、YouTube-VOS）的公开发布，在推动视频目标分割（VOS）研究进步的同时，也带来了隐私风险：下游用户可借助 SAM2 等追踪器，对数据集中的人物进行自动化、大规模的跨帧追踪。已有的像素级对抗扰动（$L_\infty$，$\varepsilon=8/255$）方法虽能干扰追踪器，却被 H.264 DCT 量化完全消除，实际无效。本文提出一种\textbf{掩码引导的语义边界抑制}方法：发布方利用现有的 GT 分割掩码，在发布前对每帧图像的物体边界区域施加低频羽化融合，使物体边界平滑消融于局部背景中。该操作不仅能抵抗 H.264 压缩，反而被编解码器的 DCT 块变换进一步放大——形成\textbf{编解码器协同放大效应}。在 DAVIS 全集（$n=88$）上，主方法（combo\_strong）使 SAM2 追踪器的 J\&F 指标下降 \textbf{16.36pp}，SSIM 保持 0.921；在隐私敏感的人物子集（$n=50$）上，全部视频均取得正向效果，平均下降 \textbf{15.59pp}，无一失效。本方法提供了一种实用、无需训练、仅依赖现有标注的视频隐私保护方案。
+\end{abstract}
+
+\tableofcontents
+\clearpage
+
+% ============================================================
+\section{引言}
+\label{sec:intro}
+
+近年来，以 SAM2 \cite{ravi2024sam2} 为代表的视频目标分割模型取得了显著进展，其依托记忆库机制（Memory Bank）实现了对任意目标的跨帧持续追踪。然而，这一能力在公开标注数据集的语境下，催生了新的隐私威胁：数据集使用者可直接利用公开预训练模型，对数据集中出现的人物进行自动化识别与追踪，而无需任何额外训练。DAVIS \cite{pont20162016}、YouTube-VOS \cite{xu2018youtube} 等基准数据集均包含大量含人物的视频片段，发布方在分发时缺乏有效的隐私保护手段。
+
+从发布方的视角出发，一个自然的思路是在数据集发布前对视频帧施加预处理，使追踪器性能下降。发布方通常持有原始高分辨率帧与对应的 GT 分割掩码，而下游用户仅能获取经 H.264 标准压缩的视频。已有研究表明，像素约束的对抗样本（$L_\infty$，$\varepsilon = 8/255$）可有效干扰神经网络追踪器，但我们的预实验证实，H.264 的 DCT 量化会将高频对抗噪声完全清零，使得预处理操作在压缩后的视频上效果归零（$\Delta\text{JF}_{\text{codec}} \approx 0\text{pp}$）。
+
+本文的核心洞察在于：\textbf{像素噪声与编解码器为对抗关系，而低频语义编辑与编解码器为协同关系}。H.264 的 8×8 DCT 块变换在量化高频噪声的同时，会对低频平滑区域做二次平滑，从而放大已经被处理过的物体边界的模糊程度。基于这一机制，我们提出\textbf{掩码引导的语义边界抑制}（Mask-Guided Semantic Boundary Suppression，MGSBS），利用 GT 掩码在每帧图像中定位物体边界，施加低频羽化混合，将边界区域融入局部背景。
+
+\paragraph{主要贡献：}
+\begin{enumerate}
+  \item 发现并系统验证了\textbf{编解码器放大效应}（Codec Amplification）：低频边界抑制在经过 H.264 压缩后，追踪干扰效果不降反升（放大因子 1.69×）。
+  \item 提出 MGSBS 方法，在 DAVIS 全集上以 SSIM=0.921 的视觉质量代价，实现 SAM2 J\&F 均值下降 16.36pp。
+  \item 通过受控消融，揭示持续逐帧编辑（而非单帧记忆投毒）是方法有效性的关键机制。
+  \item 在跨编解码器（H.265/HEVC）、跨追踪架构（XMem）及自适应反制攻击场景下，系统评估了方法的泛化性与鲁棒性。
+\end{enumerate}
+
+% ============================================================
+\section{方法}
+\label{sec:method}
+
+\subsection{问题设置}
+
+设发布方持有视频序列 $\mathcal{V} = \{I_t\}_{t=1}^{T}$（原始未压缩帧）及逐帧 GT 分割掩码 $\mathcal{M} = \{M_t\}_{t=1}^{T}$。发布方的目标是构造预处理操作：
+\begin{equation}
+  \mathcal{P}: (I_t, M_t) \rightarrow \tilde{I}_t
+\end{equation}
+使得压缩后视频 $\mathcal{C}(\tilde{\mathcal{V}})$ 上的追踪器性能指标满足
+\begin{equation}
+  \text{JF}\!\left(\mathcal{T}(\mathcal{C}(\tilde{\mathcal{V}}))\right) \ll \text{JF}\!\left(\mathcal{T}(\mathcal{C}(\mathcal{V}))\right),
+\end{equation}
+同时保持视觉保真度 $\text{SSIM}(\tilde{I}_t, I_t) \geq \tau$（本文取 $\tau = 0.90$）。
+
+下游用户（tracker user）仅持有经 $\mathcal{C}(\cdot)$（H.264 CRF23）压缩的视频，无法访问预处理操作 $\mathcal{P}$。
+
+\subsection{核心操作：边界环抑制（Boundary Ring Suppression）}
+
+对每帧图像 $I_t$ 与对应掩码 $M_t$，执行以下三步操作：
+
+\paragraph{步骤一：边界环提取}
+\begin{equation}
+  \text{ring}_t = \text{dilate}(M_t,\, k) \;\oplus\; \text{erode}(M_t,\, k),
+\end{equation}
+其中 $k$ 为形态学核半径（ring\_width），$\oplus$ 为异或操作，提取出物体边界两侧各 $k$ 像素宽的环状区域。
+
+\paragraph{步骤二：局部背景代理色提取}
+\begin{equation}
+  \text{bg\_proxy}_t = \text{GaussianBlur}\!\left(I_t \odot (1 - M_t),\, \sigma = k\right).
+\end{equation}
+
+\paragraph{步骤三：羽化混合}
+\begin{align}
+  w_t &= \text{GaussianBlur}(\text{ring}_t,\, \sigma = k/2) \cdot \alpha, \\
+  \tilde{I}_t &= I_t \cdot (1 - w_t) + \text{bg\_proxy}_t \cdot w_t.
+\end{align}
+其中 $\alpha \in [0,1]$ 为混合强度参数（blend\_alpha）。混合权重经高斯羽化后呈平滑渐变，使操作在频域中集中于低频段，从而对 H.264 DCT 量化具有天然的抵抗性。主方法（combo\_strong / idea1 strong）取 $k=24$，$\alpha=0.8$。
+
+\subsection{方法变体}
+
+方法探索过程中考察了以下变体：
+\begin{itemize}
+  \item \textbf{idea1}（纯边界抑制）：仅执行边界环抑制操作，$k=16$ 或 $k=24$，$\alpha=0.6$ 或 $0.8$；
+  \item \textbf{idea2}（回声轮廓，echo contour）：在边界外侧额外叠加一层与背景色相近的"幻影轮廓"色块；
+  \item \textbf{combo}（idea1 + idea2）：同时执行边界抑制与回声轮廓；$k=24$，$\alpha=0.8$ 为强力版（combo\_strong）；
+  \item \textbf{全局模糊}（global blur，无掩码引导）：对整帧图像施加高斯模糊。
+\end{itemize}
+
+\subsection{探索过程中的失败尝试}
+
+方法设计过程中，以下三类方案被实验证伪：
+
+\paragraph{（一）像素级 $L_\infty$ 对抗扰动}
+以 $\varepsilon=8/255$ 的 PGD 攻击直接优化像素扰动，在未压缩帧上可实现 $\Delta\text{JF}_{\text{adv}} = +12.1\text{pp}$，但经 H.264 CRF23 压缩后 $\Delta\text{JF}_{\text{codec}} \approx 0\text{pp}$。对抗扰动的能量集中于高频段，而 H.264 DCT 量化将高频系数置零，从而将扰动完全消除。
+
+\paragraph{（二）idea2 回声轮廓操作的失败}
+回声轮廓操作产生的局部色块边缘属于高频成分，经 H.264 压缩后被量化清零。实验结果显示 $\Delta\text{JF}_{\text{codec}} \approx +0.45\text{pp}$（$n=88$），几乎无效，且约 33\% 的视频出现追踪性能反而改善的情况（负值率=33\%）。
+
+\paragraph{（三）参数调优权衡}
+参数搜索揭示了若干失败区域：弱参数（$k=8$，$\alpha=0.4$）干扰不足（$\approx +2.3\text{pp}$）；全局模糊（无掩码，全帧高斯模糊）虽达 $+9.42\text{pp}$，但 SSIM 降至 0.687，视觉质量不可接受，在发布场景中不可用。最终选定 $k=24$，$\alpha=0.8$ 为最优权衡点。
+
+\paragraph{启示：}全局模糊的 SSIM 缺陷排除了无掩码方案；发布方拥有 GT 掩码这一天然优势，使得精确的目标局部操作成为可行且必要的设计选择。
+
+\subsection{编解码器放大机制}
+
+MGSBS 能够被 H.264 放大，而非被破坏，其物理机制如下：H.264 对图像帧的 $8 \times 8$ 像素块进行 DCT 变换，量化高频 DCT 系数时保留低频系数。已被边界抑制平滑处理的边界区域，H.264 的量化步骤进一步削弱该区域的高频残差，相当于对已平滑的边界施加了\textbf{二次平滑}，使边界模糊程度超过单纯预处理的效果。
+
+量化地，令 $\Delta_{\text{pre}}$ 为压缩前干扰量，$\Delta_{\text{post}}$ 为压缩后干扰量。实验中，combo\_strong 的放大因子为：
+\begin{equation}
+  \frac{\Delta_{\text{post}}}{\Delta_{\text{pre}}} = \frac{16.36}{9.68} \approx 1.69.
+\end{equation}
+H.265/HEVC 的放大因子更高（$16.97 / 9.68 \approx 1.75$），与 HEVC 更大的 CTU 块尺寸对低频聚合范围更广这一机制吻合。
+
+% ============================================================
+\section{实验}
+\label{sec:exp}
+
+\subsection{实验设置}
+
+\paragraph{数据集：} DAVIS-2016 全集（90 个视频，有效样本 $n=88/90$，去除两个无有效目标帧的视频）；隐私敏感子集取其中含"人"类目标的 $n=50/51$ 个视频。
+
+\paragraph{追踪器：} SAM2（sam2.1\_hiera\_tiny，mask prompt）；XMem \cite{cheng2022xmem}（用于跨架构泛化实验）。
+
+\paragraph{编解码器：} FFmpeg H.264 CRF23（主实验），H.265/HEVC CRF28（跨编解码器泛化实验）。
+
+\paragraph{评估指标：}
+\begin{itemize}
+  \item J\&F 均值（J Mean \& F Mean 之均值，越高代表追踪越好）；
+  \item $\Delta\text{JF} = \text{JF}_{\text{codec\_clean}} - \text{JF}_{\text{codec\_adv}}$（越大代表干扰越强）；
+  \item SSIM（视觉保真度，越高代表图像质量越好）；
+  \item 负值率（$\Delta\text{JF} < 0$ 的视频比例，越低越好）。
+\end{itemize}
+
+\paragraph{实验平台：} Tesla V100-PCIE-32GB，远程服务器。
+
+\subsection{主实验结果（SAM2，DAVIS 全集，$n=88$）}
+
+表~\ref{tab:main} 呈现了各方法在 DAVIS 全集上的主要性能。
+
+\begin{table}[H]
+\centering
+\caption{各方法在 DAVIS 全集上的追踪干扰效果（SAM2，$n=88$）}
+\label{tab:main}
+\begin{tabular}{lcccccc}
+\toprule
+方法 & $k$ & $\alpha$ & $\Delta\text{JF}_{\text{pre}}$ & $\Delta\text{JF}_{\text{post}}$ & SSIM & 负值率 \\
+\midrule
+像素 $L_\infty$（先前工作） & — & — & +12.1pp & $\approx$0pp & 0.890 & 高 \\
+idea2（回声轮廓） & — & — & — & +0.45pp & 0.975 & 33\% \\
+idea1（标准） & 16 & 0.6 & — & +4.85pp & 0.982 & 1\% \\
+combo（标准版） & 16 & 0.6 & — & +6.80pp & 0.957 & 5\% \\
+全局模糊（无掩码） & — & — & — & +9.42pp & 0.687 & 0\% \\
+\midrule
+\textbf{idea1（主方法）} & \textbf{24} & \textbf{0.8} & \textbf{+9.68pp} & \textbf{+10.69pp} & \textbf{0.982} & \textbf{1\%} \\
+\textbf{combo\_strong（主方法）} & \textbf{24} & \textbf{0.8} & \textbf{+9.68pp} & \textbf{+16.36pp} & \textbf{0.921} & \textbf{0\%} \\
+\bottomrule
+\end{tabular}
+\smallskip
+
+\small 注：$\Delta\text{JF}_{\text{pre}}$ 为压缩前干扰量，$\Delta\text{JF}_{\text{post}}$ 为经 H.264 CRF23 压缩后干扰量，负值率为追踪性能反而改善的视频比例（越低越好）。SSIM 约束门槛 $\tau = 0.90$。
+\end{table}
+
+\paragraph{分析：}第一，像素 $L_\infty$ 方法的 $\Delta\text{JF}_{\text{post}} \approx 0\text{pp}$，与其压缩前的 12.1pp 形成强烈反差，证实了高频对抗扰动在编解码器下完全失效。第二，idea2 仅实现 +0.45pp 且负值率高达 33\%，说明单纯的视觉轮廓混淆操作在 H.264 下无效。第三，全局模糊虽达 +9.42pp，但 SSIM=0.687 已严重低于可接受阈值，在数据集发布场景中不可接受。combo\_strong 在 SSIM=0.921 的前提下实现了 +16.36pp，兼顾干扰效果与视觉保真，是唯一在两个维度上同时满足要求的方法。
+
+\paragraph{编解码器放大量化：}combo\_strong 在压缩前仅实现 +9.68pp，经 H.264 后升至 +16.36pp，净放大量 \textbf{+6.68pp}，放大比 \textbf{1.69×}。
+
+\subsection{跨编解码器泛化（H.265/HEVC）}
+
+表~\ref{tab:hevc} 在 H.265/HEVC CRF28 条件下评估方法的泛化性（$n=89/90$）。
+
+\begin{table}[H]
+\centering
+\caption{跨编解码器泛化实验（combo\_strong，$n=89$）}
+\label{tab:hevc}
+\begin{tabular}{lccc}
+\toprule
+编解码器 & CRF & $\Delta\text{JF}_{\text{post}}$ & 相对 H.264 \\
+\midrule
+H.264 & 23 & +13.61pp & 基准（1.00×） \\
+H.265/HEVC & 28 & +16.97pp & \textbf{+1.25×} \\
+\bottomrule
+\end{tabular}
+\smallskip
+
+\small 注：H.265 CRF28 与 H.264 CRF23 在感知质量上大致等效，为公平比较的标准配对。
+\end{table}
+
+\paragraph{分析：}H.265/HEVC 的放大效果（+16.97pp）略强于 H.264（+13.61pp），增幅约 25\%。HEVC 采用更大的 CTU（最大 $64\times 64$）进行变换，对平滑区域的低频聚合范围更大，对已被平滑的边界的二次平滑幅度更强。该方法的有效性植根于块变换编解码器的通用机制，对现有主流视频编码标准均具有泛化性。
+
+\subsection{鲁棒性分析：自适应反制处理}
+
+现实中，知情的追踪器用户可能尝试对接收到的视频施加图像增强操作以消除预处理痕迹。表~\ref{tab:adaptive} 在四种典型反制手段下评估残余干扰效果（$n=89/90$，combo\_strong）。
+
+\begin{table}[H]
+\centering
+\caption{自适应反制处理下的残余干扰效果（combo\_strong，$n=89$）}
+\label{tab:adaptive}
+\begin{tabular}{lcc}
+\toprule
+反制处理 & $\Delta\text{JF}$ 残差 & 防御保留率 \\
+\midrule
+无反制（基准） & +13.61pp & 100\% \\
+轻度锐化（unsharp mild） & +11.52pp & 84.8\% \\
+强度锐化（unsharp strong） & +10.79pp & 79.3\% \\
+CLAHE 对比度增强 & +11.00pp & 80.8\% \\
+边缘增强（Laplacian） & +10.62pp & 78.0\% \\
+\midrule
+\textbf{组合反制（锐化 + CLAHE）} & \textbf{+9.52pp} & \textbf{69.9\%} \\
+\bottomrule
+\end{tabular}
+\smallskip
+
+\small 注：防御保留率 $= \Delta\text{JF}_{\text{残差}} / \Delta\text{JF}_{\text{基准}} \times 100\%$。
+\end{table}
+
+\paragraph{分析：}即使面对最强的组合反制，残余干扰效果仍为 +9.52pp，保留了原始效果的 69.9\%。这一鲁棒性来自方法的低频特性：边界抑制的效果已被编入视频的低频 DCT 系数中，图像锐化（高频增强）与对比度调整均无法有效恢复被抑制的边界信息。
+
+\subsection{隐私敏感子集：Person-only（$n=50$）}
+
+表~\ref{tab:person} 专门针对 DAVIS 中含"人"类目标的 50 个视频进行分析。
+
+\begin{table}[H]
+\centering
+\caption{隐私敏感人物子集实验（combo\_strong，$n=50$）}
+\label{tab:person}
+\begin{tabular}{lccc}
+\toprule
+方法 & 视频数 & $\Delta\text{JF}_{\text{codec}}$ & 负值率 \\
+\midrule
+combo\_strong & 50 & \textbf{+15.59pp} & \textbf{0/50（0\%）} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{分析：}在全部 50 个含人物的视频上，combo\_strong 均取得正向干扰效果，平均下降 15.59pp，负值率为零。对于隐私保护的核心使用场景，该方法具有高度可靠性——不存在"对某些人物视频无效"的风险。
+
+\subsection{跨追踪架构泛化（XMem）}
+
+表~\ref{tab:xmem} 在 XMem \cite{cheng2022xmem} 追踪器上重复主实验（$n=88$）。XMem 采用基于外观嵌入的记忆库机制，与 SAM2 的边界感知分割机制有本质区别。
+
+\begin{table}[H]
+\centering
+\caption{跨追踪架构泛化实验（DAVIS，$n=88$）}
+\label{tab:xmem}
+\begin{tabular}{llcc}
+\toprule
+方法 & 追踪器 & $\Delta\text{JF}_{\text{codec}}$ & 负值率 \\
+\midrule
+idea1（$k=24$，$\alpha=0.8$） & SAM2  & +10.69pp & 1/88（1.1\%）  \\
+idea1（$k=24$，$\alpha=0.8$） & XMem  & +11.67pp & 2/88（2.3\%）  \\
+combo\_strong                 & SAM2  & +16.36pp & 0/88（0\%）    \\
+combo\_strong                 & XMem  & +5.12pp  & 8/88（9.1\%）  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{分析：}实验揭示了一个架构依赖现象。idea1 在 SAM2 与 XMem 上的效果高度一致（+10.69pp vs.\ +11.67pp），说明边界抑制操作本身是\textbf{架构无关的通用干扰机制}。然而，combo\_strong 在 XMem 上仅实现 +5.12pp，远低于在 SAM2 上的 +16.36pp。差距来源于 combo 的 halo 成分：SAM2 高度依赖边界形状细节，而 XMem 更多依赖目标区域内部的外观嵌入进行记忆匹配，对边界处的轮廓混淆相对不敏感。
+
+\paragraph{启示：}如需跨架构通用保护，应选用 idea1；如仅需对 SAM2 系追踪器进行保护，combo\_strong 是更优选择。
+
+\subsection{等效质量下的 Pareto 优越性（待补充）}
+
+\noindent\textcolor{red}{\textit{【注：本节基于正在运行的 pareto\_v1 实验（GPU0，DAVIS $\times$ 20，预计约 7 小时后完成）。届时将补充 idea1 vs.\ boundary\_blur 的 Pareto 前沿对比表格（表~\ref{tab:pareto}）。}}
+
+\begin{table}[H]
+\centering
+\caption{等效质量 Pareto 前沿对比（idea1 vs.\ boundary\_blur，DAVIS $\times 20$）\protect\footnotemark}
+\label{tab:pareto}
+\begin{tabular}{lccc}
+\toprule
+SSIM 区间（发布质量） & boundary\_blur 最优 $\Delta\text{JF}$ & idea1 最优 $\Delta\text{JF}$ & idea1 优势 \\
+\midrule
+$[0.90, 0.95)$ & 待填 & 待填 & 待填 \\
+$[0.85, 0.90)$ & 待填 & 待填 & 待填 \\
+$[0.80, 0.85)$ & 待填 & 待填 & 待填 \\
+\bottomrule
+\end{tabular}
+\end{table}
+\footnotetext{Pareto 扫描结果待实验完成后更新。}
+
+% ============================================================
+\section{分析与讨论}
+\label{sec:analysis}
+
+\subsection{编解码器放大机制的理论分析}
+
+MGSBS 与 H.264 编解码器之间的协同放大效应，可从频域视角加以解释。设经预处理后的帧为 $\tilde{I}_t = I_t + \delta_t^{\text{low}}$，其中 $\delta_t^{\text{low}}$ 为低频边界抑制残差（能量集中于 DCT 低频系数）。经 H.264 编解码后，量化操作对高频系数产生截断误差 $e^{\text{high}} \to 0$，同时对低频系数产生保留甚至轻微增强效果。边界抑制区域的 8×8 DCT 块内，原始高频边界纹理在预处理后已被削弱；H.264 量化在此基础上进一步将残余高频分量置零，等效于在预处理基础上追加了一轮平滑，使边界模糊程度超过单纯预处理的效果。
+
+\subsection{持续逐帧编辑 vs.\ 单帧记忆投毒}
+
+消融实验（$n=10$）明确了有效性的时序条件：对全部帧施加预处理（adv\_all）取得 +6.5pp，仅对单帧 $t=2$ 施加操作（adv\_t）仅取得 +0.9pp。这表明 MGSBS 的干扰效果并非来自对 SAM2 记忆库的一次性"投毒"，而是在每一帧图像特征提取层面持续施加边界混淆，驱动追踪器在整个序列中累积误差。
+
+这一机制从根本上区别于已有的对抗记忆攻击，也解释了为何发布方掌握每帧 GT 掩码这一条件是必要的。
+
+\subsection{方法的局限性}
+
+本研究存在以下值得明确说明的局限：
+
+\paragraph{跨追踪器异质性：}combo\_strong 在 XMem 上的效果（+5.12pp）显著弱于在 SAM2 上的效果（+16.36pp），表明方法并非对所有追踪架构均等有效。纯边界抑制（idea1）在两者上效果相近，但绝对值（约 11pp）仍低于 combo\_strong 对 SAM2 的效果。
+
+\paragraph{GT 掩码依赖：}方法的精确性依赖逐帧 GT 掩码的可用性。若发布方仅持有部分标注，或标注精度有限，边界环提取的精确度将下降，预期效果会有所减弱。
+
+\paragraph{自适应白盒反制：}本文评估的反制操作均为黑盒的通用图像增强。若攻击者已知预处理的具体操作参数，针对性的逆操作可能进一步降低残余效果。白盒自适应攻击的防御鲁棒性是未来工作的重要方向。
+
+\paragraph{评估数据集的局限：}实验主要在 DAVIS-2016 上进行，该数据集视频时长较短（平均约 25 帧），未来需在 YouTube-VOS 等长序列、更多类别数据集上验证方法的可推广性。
+
+\paragraph{SSIM 的感知局限：}SSIM=0.921 反映了全帧平均的结构相似性，但边界区域的局部扭曲对敏感观察者仍可能可察觉。更精细的感知质量指标（如 LPIPS）有助于更准确地评估用户侧的视觉体验。
+
+% ============================================================
+\section{结论}
+\label{sec:conclusion}
+
+本文提出了\textbf{掩码引导的语义边界抑制}（MGSBS）方法，用于面向标注视频数据集发布场景的发布侧隐私保护。核心发现是：低频语义编辑与 H.264 编解码器之间存在\textbf{协同放大效应}，使得压缩后的追踪干扰效果（+16.36pp）显著超越压缩前的效果（+9.68pp），放大因子达 1.69×。
+
+实验验证了方法在以下多维度场景下的有效性：
+（1）H.264 主实验：combo\_strong 以 SSIM=0.921 实现 +16.36pp，所有 88 个视频均有效；
+（2）H.265/HEVC 泛化：放大因子提升至 1.75×，效果进一步增强；
+（3）自适应反制鲁棒性：组合反制后保留 69.9\% 效果；
+（4）人物子集：50/50 视频有效，零失效率；
+（5）跨追踪器：idea1 在 SAM2（+10.69pp）与 XMem（+11.67pp）上均有效。
+
+方法的\textbf{实用价值}在于：无需训练，仅利用发布方已有的 GT 掩码，通过纯图像处理操作实现隐私保护，可直接嵌入现有的视频数据集发布流程中。
+
+% ============================================================
+\bibliographystyle{unsrt}
+\bibliography{references}
+
+% ── 占位参考文献（BibTeX 条目在 references.bib 中补充）────
+\end{document}

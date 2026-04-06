@@ -1,0 +1,22 @@
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{Adversarial attacks on video segmentation.}
+UAP-SAM2~\citep{uap_sam2_2025} proposes pixel-constrained universal adversarial perturbations against SAM2, achieving $-45.8$ pp mIoU on DAVIS with feature-space objectives on FPN output. This is the closest prior work to ours. The critical gap: UAP-SAM2 does not test under H.264 codec. Our feature-space experiments replicate the UAP-SAM2 principle (Mode F0-B) and show that FPN-shift attacks produce $\djfadv = +0.121$ without codec but $\djfauc = -0.004$ under CRF23---the same codec collapse we observe for all strategies.
+
+DarkSAM~\citep{darksam2024} attacks the SAM image predictor without video or codec components; its results do not transfer to the video tracking scenario we study.
+
+\paragraph{Codec-robust adversarial perturbations.}
+RoVISQ~\citep{rovisq2023} demonstrates codec-surviving adversarial attacks against video \emph{classifiers}, successfully degrading accuracy after H.264 re-encoding. The key difference from our setting: video classifiers aggregate temporal features across many frames, providing more gradient signal from codec-surviving low-frequency perturbations. SAM2's per-frame memory write operates at a semantic bottleneck ($8 \times 8$ tokens after the memory encoder), which may further filter codec-surviving perturbation energy before it reaches the memory bank.
+
+\paragraph{Adversarial purification.}
+Adversarial purification~\citep{yoon2021adv_purification,diffpure2022} removes adversarial perturbations via generative models (score-based diffusion). We document a related phenomenon: H.264 CRF23 acts as an \emph{implicit} adversarial purifier through DCT quantization, without any explicit defense design. Unlike learned purifiers, this purification is ``free'' in the sense that it is an inherent property of standard video compression.
+
+\paragraph{Privacy-preserving video.}
+Fawkes~\citep{shan2020fawkes} and AdvCloak~\citep{advcloak} protect against face recognition via static image perturbations. These do not address video tracking, codec compression, or non-face-based tracking. Blurring and pixelation~\citep{mcpherson2016defeating} are destructive to video utility. Our work explores whether a non-destructive adversarial approach is feasible and finds the codec to be the fundamental barrier.
+
+\paragraph{Input-transformation defenses and adaptive evaluation.}
+A canonical finding in adversarial defenses is that preprocessing-based defenses often fail under adaptive attacks~\citep{athalye2018obfuscated,guo2018countering}: attackers who can differentiate through (or approximate) the defense can circumvent it. Our setting is \emph{not} that of a defense designer; we are the attacker attempting to make perturbations survive a pre-existing codec. Nevertheless, the adaptive evaluation question is relevant: our differentiable H.264 proxy is a training approximation, not an exact end-to-end differentiable codec. A BPDA-style or EOT-based optimizer directly targeting the real codec might produce different results; we discuss this limitation in \cref{sec:discussion}.
+
+\paragraph{Negative results in adversarial ML.}
+Our work joins a growing literature of informative negative results: \citet{tramer2020adaptive} show that many defenses fail under adaptive attacks; \citet{kurakin2016adversarial} first documented perturbation fragility in the physical world (printing/photographing). Our contribution is establishing the same fragility in the H.264 video codec channel, for a semantic tracking target.
