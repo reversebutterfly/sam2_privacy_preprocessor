@@ -152,6 +152,51 @@ def codec_proxy_transform(
 
 # ── Real FFmpeg H.264 encode/decode ───────────────────────────────────────────
 
+def encode_decode_hevc(
+    frames: List[np.ndarray],
+    crf: int = 28,
+    fps: int = 25,
+    ffmpeg_path: str = r"C:\ffmpeg\bin\ffmpeg.exe",
+) -> List[np.ndarray]:
+    """H.265/HEVC codec round-trip. CRF 28 ≈ H.264 CRF 23 in quality."""
+    if not frames:
+        return []
+    H, W = frames[0].shape[:2]
+    with tempfile.TemporaryDirectory() as tmp:
+        for i, fr in enumerate(frames):
+            bgr = cv2.cvtColor(fr, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(os.path.join(tmp, f"{i:05d}.png"), bgr)
+        in_pattern  = os.path.join(tmp, "%05d.png")
+        out_video   = os.path.join(tmp, "encoded.mp4")
+        out_pattern = os.path.join(tmp, "decoded_%05d.png")
+        cmd_enc = [
+            ffmpeg_path, "-y",
+            "-framerate", str(fps),
+            "-i", in_pattern,
+            "-vcodec", "libx265",
+            "-crf", str(crf),
+            "-preset", "medium",
+            "-pix_fmt", "yuv420p",
+            "-tag:v", "hvc1",
+            out_video,
+        ]
+        _run_ffmpeg(cmd_enc)
+        cmd_dec = [ffmpeg_path, "-y", "-i", out_video, out_pattern]
+        _run_ffmpeg(cmd_dec)
+        decoded = []
+        idx = 1
+        while True:
+            path = os.path.join(tmp, f"decoded_{idx:05d}.png")
+            if not os.path.exists(path):
+                break
+            bgr = cv2.imread(path)
+            if bgr is None:
+                break
+            decoded.append(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
+            idx += 1
+    return decoded
+
+
 def encode_decode_h264(
     frames: List[np.ndarray],
     crf: int = 23,

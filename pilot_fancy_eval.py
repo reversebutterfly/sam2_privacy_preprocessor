@@ -169,6 +169,8 @@ def parse_args():
                    help="Comma-separated video names (empty=DAVIS_MINI_VAL, 'all'=all DAVIS)")
     p.add_argument("--max_frames", type=int, default=50)
     p.add_argument("--crf",        type=int, default=23)
+    p.add_argument("--codec",      default="h264", choices=["h264", "hevc"],
+                   help="Codec for round-trip: h264 (CRF23) or hevc (CRF28)")
     p.add_argument("--prompt",     default="point", choices=["point", "mask"])
     p.add_argument("--min_jf_clean", type=float, default=0.3)
     # Baseline idea1 params
@@ -237,7 +239,7 @@ def main():
             continue
 
         # Codec-clean baseline
-        codec_frames = codec_round_trip(frames, args.ffmpeg_path, args.crf)
+        codec_frames = codec_round_trip(frames, args.ffmpeg_path, args.crf, codec=args.codec)
         if codec_frames is None:
             print(f"  [skip] codec round-trip failed")
             continue
@@ -263,7 +265,7 @@ def main():
                 mean_psnr = float(np.nanmean([p for p in psnr_vals if p != float("inf")]))
 
                 # Post-codec adversarial
-                codec_edited = codec_round_trip(edited_frames, args.ffmpeg_path, args.crf)
+                codec_edited = codec_round_trip(edited_frames, args.ffmpeg_path, args.crf, codec=args.codec)
                 if codec_edited is None:
                     print(f"    [skip] codec failed on edited frames")
                     continue

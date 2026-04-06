@@ -52,7 +52,7 @@ if ROOT not in sys.path:
 
 from config import SAM2_CHECKPOINT, SAM2_CONFIG, DAVIS_ROOT, DAVIS_MINI_VAL, FFMPEG_PATH
 from src.dataset import load_single_video
-from src.codec_eot import encode_decode_h264
+from src.codec_eot import encode_decode_h264, encode_decode_hevc
 from src.metrics import jf_score, mean_jf
 
 
@@ -461,8 +461,11 @@ def codec_round_trip(
     frames: List[np.ndarray],
     ffmpeg_path: str,
     crf: int,
+    codec: str = "h264",
 ) -> Optional[List[np.ndarray]]:
     try:
+        if codec == "hevc":
+            return encode_decode_hevc(frames, ffmpeg_path=ffmpeg_path, crf=crf)
         return encode_decode_h264(frames, ffmpeg_path=ffmpeg_path, crf=crf)
     except Exception as e:
         print(f"  [codec] error: {e}")
