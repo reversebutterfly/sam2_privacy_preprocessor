@@ -257,11 +257,13 @@ def optimize_adv_params(
         # Primary loss: minimise gradient magnitude in ring (↓ = better suppression)
         loss = _grad_mag_in_ring(edited, ring_w)
 
-        # Soft SSIM constraint: penalise large per-pixel L2 deviation as proxy
+        # Soft SSIM constraint: penalise large per-pixel L2 deviation as proxy.
+        # Empirically: SSIM ≈ 1 − 20 * mse_edit (linear approx, low-distortion regime).
+        # Penalty coefficient 20.0 enforces the floor much more strictly than 5.0
+        # to prevent alpha from exceeding the SSIM budget (reduces SSIM < 0.90 cases).
         mse_edit = ((edited - frame_t) ** 2).mean()
-        # Empirically: SSIM ≈ 1 − 20 * mse_edit (rough linear approx in low-distortion regime)
         ssim_approx = 1.0 - 20.0 * mse_edit
-        penalty = torch.relu(ssim_floor - ssim_approx) * 5.0
+        penalty = torch.relu(ssim_floor - ssim_approx) * 20.0
 
         (loss + penalty).backward()
         opt.step()
