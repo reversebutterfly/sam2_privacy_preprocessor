@@ -84,17 +84,24 @@ def apply_multiscale_suppression(
     if scales is None:
         scales = [8, 16, 24]
     if alphas is None:
-        alphas = [0.85, 0.75, 0.60]
+        # Uniform alpha matching idea1 default; outer scales use the same strength.
+        # Decreasing-alpha schemes reduce the outer ring below idea1 baseline — avoid.
+        alphas = [0.80, 0.80, 0.80]
     assert len(scales) == len(alphas), "scales and alphas must have equal length"
 
     if mask.sum() == 0:
         return frame_rgb.copy()
 
     H, W = frame_rgb.shape[:2]
-    best_weight = np.zeros((H, W), dtype=np.float32)
 
-    # Track best bg proxy per pixel separately
-    best_bg = np.zeros((H, W, 3), dtype=np.float32)
+    # Additive weight accumulation: each scale contributes a smooth ring weight;
+    # final weight = clip(sum of all ring weights, 0, max(alphas)).
+    # This ensures pixels near the boundary benefit from ALL scales that cover them,
+    # giving stronger suppression near the edge than any single-scale method.
+    max_alpha = max(alphas)
+    weight_sum = np.zeros((H, W), dtype=np.float32)
+    # Weighted background proxy: accumulate (bg * incremental_weight)
+    bg_accum   = np.zeros((H, W, 3), dtype=np.float32)
 
     for scale, alpha in zip(scales, alphas):
         kernel = np.ones((scale * 2 + 1,) * 2, np.uint8)
@@ -106,19 +113,27 @@ def apply_multiscale_suppression(
 
         sigma_blur = max(scale / 2.0, 2.0)
         smooth_ring = cv2.GaussianBlur(ring, (0, 0), sigma_blur)
-        weight = np.clip(smooth_ring * alpha, 0.0, alpha)  # [H, W]
+        w_k = np.clip(smooth_ring * alpha, 0.0, alpha)  # [H, W]
 
         bg_proxy = _bg_proxy_np(frame_rgb, mask, dilation_px=scale * 2)
 
-        # Per-pixel max-weight fusion: update where this scale dominates
-        update = weight > best_weight
-        best_weight = np.where(update,             weight,    best_weight)
-        best_bg     = np.where(update[:, :, None], bg_proxy,  best_bg)
+        # Incremental contribution of this scale (avoid double-counting pixels
+        # already covered by finer scales at full alpha)
+        w_new = np.clip(w_k - weight_sum, 0.0, None)
+        bg_accum   += w_new[:, :, None] * bg_proxy
+        weight_sum += w_new
 
-    # Final linear blend: f*(1-w) + bg*w, where w = best weight per pixel
+    # Final blend
+    weight_sum = np.clip(weight_sum, 0.0, max_alpha)
+    # Normalise accumulated bg by total weight
+    bg_final = np.where(
+        weight_sum[:, :, None] > 1e-8,
+        bg_accum / (weight_sum[:, :, None] + 1e-8),
+        frame_rgb.astype(np.float32),
+    )
     f = frame_rgb.astype(np.float32)
-    w = best_weight[:, :, None]
-    edited = f * (1.0 - w) + best_bg * w
+    w = weight_sum[:, :, None]
+    edited = f * (1.0 - w) + bg_final * w
     return np.clip(edited, 0, 255).astype(np.uint8)
 
 
