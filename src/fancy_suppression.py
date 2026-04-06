@@ -157,7 +157,8 @@ def _diff_ring_weight(mask_t: torch.Tensor,
     ring  = torch.clamp(inner - outer, 0.0, 1.0)
     # Normalise ring to [0, 1], then scale by alpha
     ring  = ring / (ring.amax(dim=(-2, -1), keepdim=True) + 1e-8)
-    return torch.clamp(ring * alpha, 0.0, alpha)
+    # ring ∈ [0,1] and alpha ∈ (0,1) so ring*alpha ∈ [0, alpha] — no clamp needed
+    return ring * alpha
 
 
 def _diff_bg_proxy(frame_t: torch.Tensor,
