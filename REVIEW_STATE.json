@@ -1,23 +1,20 @@
 {
   "round": 4,
-  "threadId": "019d4e26-f19c-74f3-ae3e-f9ee8a2b21f3",
+  "threadId": "019d6208-576e-7761-bd12-223f79d7a3da",
   "status": "completed",
-  "last_score": 5.9,
-  "last_verdict": "AAAI Almost — 5.9/10; idea1-first paper reaches 6.1/10",
+  "last_score": 6.9,
+  "last_verdict": "Almost — No today, borderline reject if submitted now",
+  "score_progression": [5.8, 6.3, 6.7, 6.9],
   "pending_experiments": [
-    "xmem_eval (GPU0, screen xmem_eval, combo, n=22 of 90, ~3h remaining)",
-    "hevc_combo_v2 (GPU2, screen hevc_combo, combo, n=26 of 90, ~4h remaining)",
-    "adaptive_combo_v2 (GPU3, screen adaptive_combo, combo, n=20 of 90, ~4h remaining)",
-    "person_combo_v2 (GPU5, screen person_combo, combo, n=19 of 50, ~2h remaining)"
+    "fancy_r4 (GPU, screen fancy_r4, remaining 54/90 DAVIS videos, ~2h)",
+    "hevc_r4 (GPU, screen hevc_r4, 12/20 HEVC videos remaining, ~45min)"
   ],
-  "final_action_items": [
-    "PIVOT: Make idea1 the primary method; combo = SAM2-enhanced variant",
-    "Finish combo XMem run (GPU0, ~3h) — can push score to 6.1-6.3 if +9pp+",
-    "Rewrite paper tables: tag every row with idea1 or combo explicitly",
-    "Keep narrow claim: publisher-side, black-box, codec-amplified boundary disruption",
-    "Explicit YT-VOS framing: content-conditioned scope limit, not a failure"
+  "remaining_blockers": [
+    "Full DAVIS sweep to n=90 + rerun analyze_paired_stats.py",
+    "HEVC generalization n=20",
+    "Global-fixed-setting comparison (rw=24, alpha=0.93 universally vs per-video AdvOpt)",
+    "Paper manuscript rewrite (LaTeX) — abstract/discussion/conclusion still describe old paper",
+    "Narrow utility claims to visual quality preservation only"
   ],
-  "method_pivot_rationale": "idea1-first paper ~6.1/10 AAAI; combo-first ~5.6-5.9/10. XMem shows idea1+11.67pp vs combo+4.39pp — idea1 is the generalizable core. Combo exploits SAM2 boundary sensitivity but does not transfer cleanly.",
-  "score_progression": [4.0, 5.5, 5.8, 5.9],
-  "timestamp": "2026-04-03T12:30:00"
+  "timestamp": "2026-04-06T17:15:00"
 }
