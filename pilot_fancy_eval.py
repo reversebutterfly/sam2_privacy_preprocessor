@@ -90,7 +90,9 @@ def apply_method(
             infos.append({"scales": scales, "alphas": alphas})
 
     elif method == "adv_opt":
-        # Optimise per-video using the first annotated frame (fast proxy)
+        # First-frame adaptation: optimise (sigma, alpha) using the first annotated frame,
+        # then apply the same params to all frames (consistent with publisher-side setting
+        # where full video is available but optimisation runs once per video).
         first_mask = next((m for m in masks if m.sum() > 0), masks[0])
         first_frame = frames[0]
         t0 = time.time()
@@ -99,13 +101,16 @@ def apply_method(
             n_iter=args.adv_n_iter, lr=args.adv_lr,
             ssim_floor=args.ssim_floor, device=device)
         adv_time = time.time() - t0
-        print(f"    [adv_opt] optimised: ring_width={rw}, blend_alpha={alpha:.3f} ({adv_time:.1f}s)")
+        print(f"    [adv_opt] first-frame adapt: ring_width={rw}, blend_alpha={alpha:.3f} ({adv_time:.1f}s)")
         for frame, mask in zip(frames, masks):
             edited.append(apply_boundary_suppression(frame, mask, ring_width=rw, blend_alpha=alpha))
             infos.append({"ring_width": rw, "blend_alpha": alpha, "adv_opt_time": adv_time})
 
     elif method == "lfnet":
-        # Fine-tune LFNet per-video (using first annotated frame as representative)
+        # First-frame adaptation: self-supervised fine-tuning on first annotated frame,
+        # then apply the trained weight map to all frames.
+        # This is valid in the publisher-side setting — the publisher has all frames
+        # and selects a representative frame for network adaptation.
         first_mask  = next((m for m in masks if m.sum() > 0), masks[0])
         first_frame = frames[0]
         t0 = time.time()
@@ -113,7 +118,7 @@ def apply_method(
             first_frame, first_mask,
             n_iter=args.lfnet_n_iter, ssim_floor=args.ssim_floor, device=device)
         train_time = time.time() - t0
-        print(f"    [lfnet] trained: {train_time:.1f}s")
+        print(f"    [lfnet] first-frame trained: {train_time:.1f}s")
         for frame, mask in zip(frames, masks):
             edited.append(apply_lfnet_suppression(frame, mask, model=model, device=device))
             infos.append({"lfnet_train_time": train_time})
@@ -247,9 +252,10 @@ def main():
                 edited_frames, infos = apply_method(method, frames, masks, args, device)
                 method_time = time.time() - t0
 
-                # Quality (first 5 frames)
+                # Quality — all frames (capped at 20 for speed)
+                quality_frames = list(zip(frames[:20], edited_frames[:20]))
                 ssim_vals, psnr_vals = [], []
-                for fo, fe in zip(frames[:5], edited_frames[:5]):
+                for fo, fe in quality_frames:
                     s, p = frame_quality(fo, fe)
                     ssim_vals.append(s)
                     psnr_vals.append(p)
