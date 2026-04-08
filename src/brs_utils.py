@@ -160,6 +160,8 @@ def normal_transport_proxy(
     max_out: int = 28,
     smooth_sigma: float = 1.5,
     mid_gain: float = 0.20,
+    _dist_in: np.ndarray | None = None,
+    _dist_out: np.ndarray | None = None,
 ) -> np.ndarray:
     """
     Normal-transport background proxy.
@@ -170,12 +172,18 @@ def normal_transport_proxy(
 
     Falls back to multiband_background_proxy for pixels whose source
     location still lands inside the mask.
+
+    _dist_in / _dist_out: optional pre-computed distance fields to avoid
+    redundant cv2.distanceTransform calls.
     """
     mask_u8 = binary_mask_u8(mask)
     if mask_u8.sum() == 0:
         return frame_rgb.copy()
 
-    dist_in, dist_out = mask_distance_fields(mask_u8)
+    if _dist_in is not None and _dist_out is not None:
+        dist_in, dist_out = _dist_in, _dist_out
+    else:
+        dist_in, dist_out = mask_distance_fields(mask_u8)
 
     # Smooth SDF to get stable normals
     sdf = dist_out.astype(np.float32) - dist_in.astype(np.float32)
@@ -281,13 +289,8 @@ def add_boundary_block_bias(
     """
     Block-aligned low-frequency chroma/luma split at boundary-crossing DCT blocks.
 
-    For each 8×8 block that straddles the object boundary, add a low-frequency
-    split-step bias in Y/Cr/Cb proportional to signed distance from the boundary.
-    This creates a codec-visible discontinuity in blocks that H.264 must encode
-    as large AC coefficients — amplified to artifacts post-decode.
-
-    Unlike checkerboard patterns, this low-frequency split survives quantization
-    better while remaining below the human JND threshold in textured regions.
+    Fully vectorized (no Python loops) using morphological ops + sliding window
+    variance for texture masking.
     """
     mask_u8 = binary_mask_u8(mask)
     if mask_u8.sum() == 0:
@@ -296,30 +299,28 @@ def add_boundary_block_bias(
     dist_in, dist_out = mask_distance_fields(mask_u8)
     signed = dist_out.astype(np.float32) - dist_in.astype(np.float32)
 
+    # Support and basis (pixel-level)
+    support = (np.abs(signed) <= float(max_dist)).astype(np.float32)
+    basis = np.clip(-signed / float(max_dist), -1.0, 1.0) * support
+
+    # Boundary-crossing blocks: both fg AND bg exist within block neighbourhood
+    kernel_b = np.ones((block, block), np.uint8)
+    block_has_fg = cv2.dilate(mask_u8, kernel_b).astype(np.float32)
+    block_has_bg = cv2.dilate(1 - mask_u8, kernel_b).astype(np.float32)
+    crossing = (block_has_fg > 0) & (block_has_bg > 0)
+
+    # Texture masking: local variance via box filter (fast, fully vectorized)
     ycc = cv2.cvtColor(frame_rgb.astype(np.uint8), cv2.COLOR_RGB2YCrCb).astype(np.float32)
-    H, W = mask_u8.shape
+    y_ch = ycc[:, :, 0]
+    ksize = (block, block)
+    y_mean = cv2.blur(y_ch, ksize)
+    y_sq_mean = cv2.blur(y_ch * y_ch, ksize)
+    local_var = np.maximum(y_sq_mean - y_mean * y_mean, 0.0)
+    tm = np.clip(local_var / 64.0, 0.35, 1.0)
 
-    for y0 in range(0, H, block):
-        for x0 in range(0, W, block):
-            ys = slice(y0, min(y0 + block, H))
-            xs = slice(x0, min(x0 + block, W))
-            mb = mask_u8[ys, xs]
-            if mb.min() == mb.max():
-                continue  # pure interior or pure exterior — skip
+    bias = basis * tm * crossing.astype(np.float32)
+    ycc[:, :, 0] = np.clip(ycc[:, :, 0] + amp_y * bias, 0, 255)
+    ycc[:, :, 1] = np.clip(ycc[:, :, 1] + amp_c * bias, 0, 255)
+    ycc[:, :, 2] = np.clip(ycc[:, :, 2] - amp_c * bias, 0, 255)
 
-            sb = signed[ys, xs]
-            support = (np.abs(sb) <= max_dist).astype(np.float32)
-
-            # Low-frequency split: continuous ramp across boundary, clamped to [-1, 1]
-            basis = np.clip(-sb / float(max_dist), -1.0, 1.0) * support
-
-            # Texture masking: reduce amplitude in flat (low-variance) regions
-            var_y = float(np.var(ycc[ys, xs, 0]))
-            tm = float(np.clip(var_y / 64.0, 0.35, 1.0))
-
-            ycc[ys, xs, 0] += amp_y * tm * basis
-            ycc[ys, xs, 1] += amp_c * tm * basis
-            ycc[ys, xs, 2] -= amp_c * tm * basis
-
-    ycc = np.clip(ycc, 0, 255).astype(np.uint8)
-    return cv2.cvtColor(ycc, cv2.COLOR_YCrCb2RGB)
+    return cv2.cvtColor(ycc.astype(np.uint8), cv2.COLOR_YCrCb2RGB)

@@ -349,6 +349,8 @@ def apply_asym_hard_proxy(
         frame_rgb, mask_u8,
         max_out=2 * inner_w + 4,
         mid_gain=proxy_mid_gain,
+        _dist_in=dist_in,
+        _dist_out=dist_out,
     )
 
     out = frame_rgb.astype(np.float32).copy()
