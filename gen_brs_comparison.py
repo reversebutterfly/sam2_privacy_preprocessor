@@ -130,7 +130,7 @@ DEFAULT_VIDEOS = [
 def process_video(video: str, frame_idx: int, out_dir: Path,
                   show_contour: bool = True) -> dict:
     frames, masks, _ = load_single_video(
-        DAVIS_ROOT, video, max_frames=None, split="val",
+        DAVIS_ROOT, video, max_frames=-1,
     )
     if not frames:
         print(f"  [skip] {video}: load failed")
