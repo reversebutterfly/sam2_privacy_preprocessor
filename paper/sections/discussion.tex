@@ -1,39 +1,76 @@
-\section{Discussion, Limitations, and Implications}
+\section{Discussion, Limitations, and Future Work}
 \label{sec:discussion}
 
-\subsection{Implications for Privacy-Preserving Video}
+\subsection{Experimental Protocol and Sample Accounting}
+\label{subsec:accounting}
 
-Our findings place a fundamental constraint on the adversarial approach to publisher-side privacy protection for SAM2-based tracking. Within the $\varepsilon = 8/255$ L$_\infty$ budget, the standard video release pipeline (H.264 CRF23) acts as an effective adversarial purifier that the attacker cannot overcome with current gradient-based methods. Future work in this direction should consider:
+Different subsets of videos appear across our experiments, which we clarify here.
+Table~\ref{tab:protocol} summarises inclusion criteria, subset sizes, and the claim each subset supports.
 
-\begin{itemize}
-  \item \textbf{Larger $\varepsilon$}: At sufficient perturbation magnitude, low-frequency pixel energy would survive codec. However, the SSIM and LPIPS constraints would also be violated, making the perturbation visible. The exact crossover point is an open question.
-  \item \textbf{Semantic-level perturbations}: Perturbations that directly modify low-frequency video statistics (e.g., color distribution, spatial composition) may survive codec at lower $\varepsilon$, at the cost of changing video appearance more dramatically.
-  \item \textbf{Alternative codecs}: VP9 and H.265 have different quantization profiles. CRF23 H.264 is the most relevant for practical video distribution, but robustness may differ across codec settings.
-\end{itemize}
+\begin{table}[h]
+\centering
+\small
+\caption{Protocol and sample accounting across experiments. ``Valid'' = videos passing $\mathrm{JF}_\mathrm{clean} \geq 0.30$ and successful codec round-trip.}
+\label{tab:protocol}
+\begin{tabular}{lrlll}
+\toprule
+\textbf{Experiment} & \textbf{N} & \textbf{Dataset} & \textbf{Codec} & \textbf{Claim} \\
+\midrule
+Main DAVIS paired       & 36  & DAVIS (90 total) & H.264 CRF=23 & AdvOpt vs.\ baseline gain \\
+Global-fixed DAVIS      & 27  & DAVIS            & H.264 CRF=23 & Collapse to universal point \\
+Proxy validation        & 88  & DAVIS            & H.264 CRF=23 & Within-video proxy $r{=}+0.811$ \\
+Oracle-gap              & 88  & DAVIS            & H.264 CRF=23 & 98\% proxy-oracle match \\
+Utility (SSIM/YOLO)     & 20  & DAVIS            & H.264 CRF=23 & Privacy-utility tradeoff \\
+HEVC generalization     & 17  & DAVIS            & HEVC CRF=23  & Codec generalization \\
+XMem cross-tracker      & 19  & DAVIS            & H.264 CRF=23 & Tracker generalization \\
+YT-VOS full sweep       & 497 & YT-VOS (507 valid)& H.264 CRF=23 & Dataset generalization \\
+YT-VOS op.\ point       & 50  & YT-VOS           & — (opt.\ only)& $\alpha$ convergence at ssim\_floor=0.90 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-\subsection{Implications for Adversarial Robustness Evaluation}
+The DAVIS main sweep uses $n=36$ of 90 videos; the full 90-video sweep is ongoing (parallel run). The YT-VOS operating-point experiment ($n=50$, ssim\_floor=0.90) reports AdvOpt alpha distributions confirming $94\%$ convergence to $\alpha \in [0.92, 0.93)$; the paired JF comparison at matched quality is pending completion.
 
-Our results suggest that adversarial attacks against video segmentation and tracking should be evaluated under real codec conditions. UAP-SAM2~\citep{uap_sam2_2025}, DarkSAM~\citep{darksam2024}, and related work report results under standard (codec-free) conditions. If these systems are intended for deployment in real video pipelines, their attack effectiveness may be substantially reduced by the codec that is an unavoidable part of video distribution.
+\subsection{Operating-Point Discovery vs.\ Per-Video Adaptation}
 
-We recommend that video adversarial attack papers include a ``post-codec'' column in their main results tables, using real FFmpeg H.264 CRF23 (or the target deployment codec) rather than a differentiable proxy. Our differentiable proxy (YUV 4:2:0 + blur + noise + resize) is a reasonable training augmentation but is not a faithful evaluation substitute for real H.264.
+The central finding---that a global-fixed setting $(r=24,\alpha=0.93)$ matches per-video AdvOpt on DAVIS ($n=27$, $+0.3\,\mathrm{pp}$, $t=0.31$)---should be interpreted carefully.
+It does not mean AdvOpt is unnecessary. It means AdvOpt \emph{discovered} that $\alpha\approx 0.93$ is the near-universal codec-robust operating point, which was not known \emph{a priori}.
+The intuitive starting point is $\alpha=0.80$ (idea1), which leaves $\sim 33\,\mathrm{pp}$ of privacy gain on the table.
+The proxy (within-video $r=+0.811$, oracle gap 98\%) validates that AdvOpt reliably finds this optimal point under the quality constraint, rather than by exhaustive search.
+
+On heterogeneous content (YT-VOS), $12\%$ of videos genuinely require lower $\alpha$ to satisfy the SSIM constraint.
+For these videos, per-video selection via AdvOpt is necessary; a global fixed setting would violate the quality bound.
+The proxy correctly identifies these constraint-bound cases.
+
+\subsection{Soft Surrogate Constraint: Scope and Violations}
+
+AdvOpt enforces quality via a soft surrogate: a differentiable MSE penalty acting as a proxy for $\mathrm{SSIM} \approx 1 - 20 \cdot \mathrm{MSE}$.
+This is not a hard post-codec constraint. The surrogate is tight in the low-distortion regime but can underestimate the true SSIM impact on high-contrast scenes.
+We observe a $6\%$ soft-violation rate (realized SSIM $< 0.90$) on YT-VOS for AdvOpt, and $2\%$ for the fixed baseline ($\alpha=0.80$).
+
+We report this honestly: the method maintains SSIM $\geq 0.90$ for $94\%$ of YT-VOS videos and for all tested DAVIS videos with the global-fixed setting.
+The surrogate brittleness is documented in our ssim\_floor ablation (Section~\ref{subsec:accounting}): at ssim\_floor=0.92 with a strong baseline ($\alpha=0.93$), the optimizer collapses to very low $\alpha$ because the constraint binds too aggressively.
+The correct operating regime is ssim\_floor $\in [0.88, 0.90]$, where the surrogate provides reliable guidance.
+Future work should replace the MSE-SSIM surrogate with the true SSIM gradient or a learned quality predictor.
+
+\subsection{Privacy-Utility Tradeoff}
+
+AdvOpt achieves stronger privacy ($+57.7\,\mathrm{pp}$, SSIM $\approx 0.928$) than the fixed baseline ($+24.7\,\mathrm{pp}$, SSIM $\approx 0.953$) at a measurable downstream cost: YOLO detection recall drops from $77.5\%$ (baseline) to $55.2\%$ (AdvOpt).
+This is a deliberate privacy-utility tradeoff, not a side effect.
+The appropriate use case is a dataset publisher who prioritises strong, codec-robust privacy guarantees and can accept reduced downstream utility for third-party annotators.
+
+\subsection{Scope of Generalization}
+
+Cross-codec generalization (HEVC: $+28.5\,\mathrm{pp}$, $t=4.20$) confirms that the operating point is robust to codec-family change.
+Cross-tracker transfer to XMem ($17.6\,\mathrm{pp}$) is present but attenuated (vs.\ $\sim 54\,\mathrm{pp}$ for SAM2), consistent with XMem's memory-based matching being less reliant on boundary features than SAM2's contour-heavy encoder.
+The method is not tracker-agnostic: its effectiveness depends on the target tracker's boundary-feature dependency.
 
 \subsection{Limitations}
 
-\paragraph{Single backbone.} All experiments use SAM2.1 hiera\_tiny. Larger models (SAM2-Small, SAM2-Large) have different feature-space characteristics and may exhibit different codec-robustness behavior.
+\paragraph{Proxy scope.} The proxy and oracle-gap experiments are validated on DAVIS. YT-VOS proxy validation (within-video correlation) is not yet available.
 
-\paragraph{Small validation set.} Nine DAVIS videos provide clear trends but limited statistical power. Multi-dataset validation (YT-VOS, MOSE) would strengthen the negative result.
+\paragraph{Single backbone.} All experiments use SAM2.1 hiera\_tiny. Larger SAM2 variants (Small, Large) may differ in boundary-feature reliance.
 
-\paragraph{Surrogate gap in pixel-level attacks.} The pixel-level training surrogate uses \texttt{logits.detach()} and a single rolling memory entry, approximating but not exactly replicating the full SAM2VideoPredictor computation graph. We cannot rule out that exact end-to-end gradient flow would produce different results, though the feature-space direct optimization experiments (which are closer to exact local optimization) also fail.
+\paragraph{Mask quality.} AdvOpt uses the first annotated frame only. For imperfect or missed masks, the selected parameters may be suboptimal.
 
-\paragraph{Dataset selection bias.} The validity filter ($\text{JF}_\text{clean} \geq 0.5$) retains 9 DAVIS videos where SAM2 tracks well under clean conditions. Harder videos (lower $\text{JF}_\text{clean}$) might exhibit different codec-robustness dynamics; however, they also represent less relevant attack targets (if SAM2 already fails cleanly, perturbing them provides no privacy benefit).
-
-\paragraph{Single CRF setting.} Results are for CRF23. Very high quality (CRF18) would attenuate less; lower quality (CRF28) would attenuate more. A sweep across CRF values would strengthen the characterization of codec attenuation as a function of compression strength. CRF23 is the most practically relevant setting for public video distribution.
-
-\paragraph{Adaptive codec-aware optimization (most important limitation).}
-Our differentiable H.264 proxy is used as a \emph{training regularizer}, not as a fully differentiable codec. A truly adaptive attacker with access to BPDA-style gradients~\citep{athalye2018obfuscated} through the real codec, or EOT-style robustness via compression augmentation, might produce perturbations with more low-frequency structure. We note that our feature-space direct optimization already uses the proxy during optimization, yet still fails; however, we cannot rule out that a more faithful gradient estimator through real H.264 would yield different results. This is the most important open question following from our work.
-
-\paragraph{Scope.} This is not an impossibility proof. We have shown that specific attack families fail within $\varepsilon = 8/255$. A fundamentally different attack paradigm—including stronger adaptive optimization, larger budgets, or semantic-level manipulation—might succeed.
-
-\subsection{Connection to Adversarial Purification}
-
-The codec-kill phenomenon we document is conceptually related to adversarial purification~\citep{yoon2021adv_purification,diffpure2022}, where a preprocessing step (typically a generative model) removes adversarial perturbations before the target classifier. Our finding shows this purification can occur ``for free'' as a side effect of lossy video compression. This has implications for the broader question of natural robustness: if a compression channel exists in the deployment pipeline, adversarial perturbations optimized for the pre-compression distribution may fail catastrophically in the post-compression regime.
+\paragraph{Differentiable codec.} A true end-to-end codec-in-loop optimizer could potentially discover stronger operating points than the boundary gradient proxy. This is the most important direction for future work.

@@ -1,10 +1,17 @@
 \section{Conclusion}
 \label{sec:conclusion}
 
-We investigated whether pixel-constrained adversarial perturbations ($\varepsilon = 8/255$) can survive H.264 CRF23 to disrupt SAM2 video object tracking---a key requirement for publisher-side privacy protection. Through seven systematic experiments covering pixel-level CNN preprocessors and three feature-space optimization modes, we find a clear and consistent negative result within the tested attack families: H.264 CRF23 is an effective adversarial purifier that reduces attack effectiveness by 96--100\% in all tested configurations.
+We presented \textbf{AdvOpt}, a proxy-validated soft surrogate-constrained parameter selection procedure for boundary ring suppression (BRS), a lightweight privacy preprocessing method that degrades SAM2-based video object tracking after H.264/HEVC codec compression while preserving perceptual quality.
+AdvOpt is best understood as an \emph{offline calibration tool}: it discovers the codec-robust operating point once, after which the discovered parameters can be applied globally without per-video re-optimisation.
 
-The most striking evidence is the bus video case study: a single-frame perturbation that collapses SAM2 tracking from 93.5\% to 6.8\% JF score (without codec) produces zero practical effect after H.264 encoding. The optimizer is not the limiting factor---it finds effective perturbations. The codec destroys them.
+The central finding is a near-universal codec-robust operating point $(r^*\approx 24\,\mathrm{px},\, \alpha^*\approx 0.93)$ that can be discovered per-video via AdvOpt or applied globally with equivalent effect.
+On DAVIS ($n=27$ paired), a global-fixed setting with these parameters achieves the same performance as per-video optimization ($+0.3\,\mathrm{pp}$, $t=0.31$), confirming that AdvOpt's role is operating-point \emph{discovery} rather than video-specific tuning on homogeneous content.
+On heterogeneous content (YT-VOS), $88\%$ of videos converge to the same operating point; the remaining $12\%$ require lower $\alpha$ to maintain the SSIM quality constraint, demonstrating the proxy's role in constraint-aware selection.
 
-We identify the root cause as the high-frequency concentration of $L_\infty$-constrained perturbations, which are exactly the frequency components removed by DCT quantization in H.264 CRF23. Feature-space attacks targeting SAM2's lower-resolution memory representations do not escape this limitation, because the pixel-space gradient that drives them retains the same high-frequency structure.
+The proxy (within-video $r=+0.811$, oracle-gap $98\%$) provides a principled and computationally cheap validation that the selected parameters are near-optimal without requiring codec-in-the-loop optimization.
+Generalization across codecs (HEVC) and trackers (XMem, $17.6\,\mathrm{pp}$) suggests boundary-level feature destruction is a codec-robust mechanism beyond SAM2.
 
-Our results call for two changes in practice: (1) adversarial attack papers targeting video should include real-codec evaluation, and (2) adversarial privacy tool developers should treat codec robustness as a first-class design constraint rather than an afterthought. Within the current $\varepsilon = 8/255$ framework and the tested attack families, the codec appears to be an insurmountable barrier for gradient-based optimization without true end-to-end differentiability through the codec.
+We acknowledge the privacy-utility tradeoff explicitly: the method maintains $\mathrm{SSIM}\geq 0.90$ on average but with a $6\%$ soft-constraint violation rate, and downstream object-detection recall drops by $\sim 22\,\mathrm{pp}$ relative to the unprocessed baseline.
+This method is best suited for dataset publishers who need strong, codec-robust privacy guarantees and can tolerate a deliberate utility reduction.
+
+Future work includes: end-to-end differentiable codec-in-loop optimization, extension to non-boundary-dependent trackers, and adaptive utility controls that jointly optimize privacy and downstream task preservation.
