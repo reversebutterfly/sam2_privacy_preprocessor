@@ -143,17 +143,20 @@ def apply_multiscale_suppression(
 # Differentiable helpers operating on [B, C, H, W] float tensors ∈ [0, 1].
 
 def _gauss_blur_torch(x: torch.Tensor, sigma: float) -> torch.Tensor:
-    """Differentiable Gaussian blur via separable F.conv2d."""
+    """Differentiable Gaussian blur via separable 1D convolutions (O(n) not O(n²))."""
     ks = max(int(4.0 * sigma + 0.5) | 1, 3)   # ensure odd
     t  = torch.arange(ks, dtype=x.dtype, device=x.device) - (ks - 1) / 2.0
     k1 = torch.exp(-0.5 * (t / sigma) ** 2)
     k1 = k1 / k1.sum()
 
     C = x.shape[1]
-    k2d = (k1.unsqueeze(0) * k1.unsqueeze(1)).unsqueeze(0).unsqueeze(0)
-    k2d = k2d.expand(C, 1, ks, ks)
     pad = ks // 2
-    return F.conv2d(x, k2d, padding=pad, groups=C)
+    # Separable: horizontal then vertical — O(ks) instead of O(ks²)
+    kh = k1.view(1, 1, 1, ks).expand(C, 1, 1, ks)  # [C, 1, 1, ks]
+    kv = k1.view(1, 1, ks, 1).expand(C, 1, ks, 1)  # [C, 1, ks, 1]
+    out = F.conv2d(x, kh, padding=(0, pad), groups=C)
+    out = F.conv2d(out, kv, padding=(pad, 0), groups=C)
+    return out
 
 
 def _diff_ring_weight(mask_t: torch.Tensor,
