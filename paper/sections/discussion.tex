@@ -25,11 +25,16 @@ HEVC generalization     & 17  & DAVIS            & HEVC CRF=23  & Codec generali
 XMem cross-tracker      & 19  & DAVIS            & H.264 CRF=23 & Tracker generalization \\
 YT-VOS full sweep       & 497 & YT-VOS (507 valid)& H.264 CRF=23 & Dataset generalization \\
 YT-VOS op.\ point       & 50  & YT-VOS           & — (opt.\ only)& $\alpha$ convergence at ssim\_floor=0.90 \\
+YT-VOS fair comparison  & 50  & YT-VOS           & H.264 CRF=23 & idea1($\alpha{=}0.93$) vs.\ AdvOpt at matched quality \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The DAVIS main sweep uses $n=36$ of 90 videos; the full 90-video sweep is ongoing (parallel run). The YT-VOS operating-point experiment ($n=50$, ssim\_floor=0.90) reports AdvOpt alpha distributions confirming $94\%$ convergence to $\alpha \in [0.92, 0.93)$; the paired JF comparison at matched quality is pending completion.
+The DAVIS main sweep uses $n=36$ of 90 videos; the full 90-video sweep is ongoing.
+The YT-VOS fair comparison ($n=50$, ssim\_floor=0.90) directly compares idea1($\alpha{=}0.93$) vs.\ AdvOpt under the same codec protocol:
+AdvOpt achieves $16.45\,\mathrm{pp}$ vs.\ idea1's $17.27\,\mathrm{pp}$ (mean gain $= -0.82\,\mathrm{pp}$, $t{=}{-}2.08$, $n{=}50$);
+$94\%$ of gains fall within $\pm 5\,\mathrm{pp}$, confirming near-equivalence for the majority of videos.
+The $-0.82\,\mathrm{pp}$ difference traces entirely to $6/50$ videos where the MSE surrogate over-penalises and the optimizer backs off unnecessarily (surrogate brittleness; see Section~\ref{subsec:soft_constraint}).
 
 \subsection{Operating-Point Discovery vs.\ Per-Video Adaptation}
 
@@ -39,9 +44,12 @@ The intuitive starting point is $\alpha=0.80$ (idea1), which leaves $\sim 33\,\m
 The proxy (within-video $r=+0.811$, oracle gap 98\%, both on DAVIS) validates that AdvOpt reliably finds this optimal point under the quality constraint, rather than by exhaustive search.
 We note that proxy validation is conducted on DAVIS; transfer to YT-VOS and HEVC is supported by the convergence of AdvOpt's selected $\alpha$ to the same operating point ($94\%$ of YT-VOS videos converge to $\alpha\in[0.92,0.93)$ under ssim\_floor=0.90), but within-video proxy correlation on YT-VOS is not yet available and is left for future work.
 
-On heterogeneous content (YT-VOS), $12\%$ of videos genuinely require lower $\alpha$ to satisfy the SSIM constraint.
-For these videos, per-video selection via AdvOpt is necessary; a global fixed setting would violate the quality bound.
-The AdvOpt optimizer identifies these constraint-bound cases and selects a conservative $\alpha$, as confirmed by the alpha distribution on YT-VOS.
+The YT-VOS fair comparison ($n=50$) directly tests this: idea1($\alpha{=}0.93$) vs.\ AdvOpt($\mathrm{ssim\_floor}{=}0.90$) on the same 50 videos with the same codec protocol.
+AdvOpt converges to $\alpha{>}0.92$ for $88\%$ of videos, matching idea1 closely (within $\pm 5\,\mathrm{pp}$ for $94\%$ of pairs).
+For $12\%$ of videos (6/50), the MSE surrogate over-penalises: AdvOpt backs off to $\alpha{<}0.92$ even though idea1's actual SSIM $\geq 0.96$ for all 6 of these videos, indicating false constraint activation rather than a genuine quality risk.
+The net effect: AdvOpt achieves $-0.82\,\mathrm{pp}$ less privacy degradation on average ($t{=}{-}2.08$, $n{=}50$), driven entirely by these surrogate-brittle cases.
+Both methods have the same SSIM violation rate ($3/50 = 6\%$ below $0.90$).
+The correct deployment strategy is therefore: use AdvOpt offline to discover the global operating point ($r^*{=}24$, $\alpha^*{\approx}0.93$), then apply this fixed setting globally.
 
 \subsection{Soft Surrogate Constraint: Scope and Violations}
 

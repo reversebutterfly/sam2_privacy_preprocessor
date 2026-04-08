@@ -1,0 +1,92 @@
+\section{Method}
+\label{sec:method}
+
+\subsection{Boundary Ring Suppression (BRS)}
+\label{subsec:brs}
+
+Let $\mathbf{F} \in \mathbb{R}^{H \times W \times 3}$ be a video frame and $\mathbf{M} \in \{0,1\}^{H \times W}$ be a binary object mask.
+\emph{Boundary ring suppression} (BRS) replaces the object boundary region with a blended background proxy:
+
+\begin{equation}
+\label{eq:brs}
+\mathbf{F}'_{ij} =
+\begin{cases}
+(1 - w_{ij}\alpha)\,\mathbf{F}_{ij} \;+\; w_{ij}\alpha\,\mathbf{B}_{ij} & \text{if } (i,j) \in \mathcal{R}(r) \\
+\mathbf{F}_{ij} & \text{otherwise,}
+\end{cases}
+\end{equation}
+
+where $\mathcal{R}(r)$ is a feathered ring of width $r$ pixels around the mask boundary (the set difference of a dilation by $r$ and an erosion by $r$ of $\mathbf{M}$), $\alpha \in [0,1]$ is the blend strength, $w_{ij} \in [0,1]$ is a smooth Gaussian weight that feathers the ring boundary, and $\mathbf{B}$ is a local background proxy obtained by Gaussian-blurring the masked background region.
+
+The two free parameters are $(r, \alpha)$. Operating at $r=24$ pixels and $\alpha=0.93$ degrades SAM2 tracking by a mean of $+57.7\,\mathrm{pp}$ after H.264 CRF=23 encode/decode while maintaining $\mathrm{SSIM} \geq 0.90$ for $94\%$ of frames.
+
+\subsection{Codec Pipeline}
+\label{subsec:codec}
+
+For a sequence of preprocessed frames $\{\mathbf{F}'_t\}$, we apply a standard codec round-trip:
+\begin{equation}
+\{\tilde{\mathbf{F}}_t\} = \mathrm{DECODE}(\mathrm{ENCODE}(\{\mathbf{F}'_t\},\, \mathrm{CRF}))
+\end{equation}
+using FFmpeg libx264 (H.264) at CRF=23 by default. The post-codec frames $\{\tilde{\mathbf{F}}_t\}$ are passed to SAM2 for tracking evaluation. All privacy, quality, and tracking metrics are computed post-codec.
+
+\subsection{AdvOpt: Proxy-Validated Operating-Point Discovery}
+\label{subsec:advopt}
+
+\paragraph{Motivation.}
+The optimal $(r^*, \alpha^*)$ depends on the video content: aggressive suppression ($\alpha \to 1$) maximises privacy but risks SSIM violations; conservative values ($\alpha \to 0$) preserve quality but offer little privacy. Rather than searching exhaustively post-codec (which requires codec differentiability), AdvOpt minimises a differentiable pre-codec proxy that correlates with post-codec tracking degradation.
+
+\paragraph{Proxy loss.}
+We use the mean gradient magnitude inside the ring as a proxy for boundary detectability by SAM2:
+\begin{equation}
+\mathcal{L}_\mathrm{proxy}(\mathbf{F}, \mathbf{M}; \sigma, \alpha) = \frac{1}{|\mathcal{R}|} \sum_{(i,j)\in\mathcal{R}} \|\nabla \mathbf{F}'_{ij}\|^2,
+\end{equation}
+where the ring $\mathcal{R}$ is parameterised by $\sigma$ (via Gaussian-blurred mask differencing) and $\mathbf{F}'$ depends on $(\sigma, \alpha)$ through Eq.~\ref{eq:brs}.
+Minimising this loss reduces the boundary gradient available to SAM2's boundary-sensitive encoder, which we validate correlates with post-codec $\Delta\mathrm{JF}$ (within-video Pearson $r=+0.811$, DAVIS $n=88$).
+
+\paragraph{Soft surrogate constraint.}
+We enforce a quality floor via a soft penalty:
+\begin{equation}
+\mathcal{L}_\mathrm{penalty} = \lambda \cdot \mathrm{ReLU}(\tau - \hat{S}),
+\quad \hat{S} = 1 - 20 \cdot \mathrm{MSE}(\mathbf{F}', \mathbf{F}),
+\end{equation}
+where $\tau = \mathrm{ssim\_floor} \in [0.88, 0.90]$ is the target SSIM floor, $\hat{S}$ is a linear SSIM approximation, and $\lambda = 20.0$ controls constraint hardness.
+This surrogate is tight in the low-distortion regime; we observe a $6\%$ soft-violation rate (actual SSIM $< 0.90$) documenting its limitations.
+
+\paragraph{Optimisation.}
+AdvOpt minimises $\mathcal{L}_\mathrm{proxy} + \mathcal{L}_\mathrm{penalty}$ over $(\log\sigma, \mathrm{logit}(\alpha))$ using Adam (80 iterations, $\mathrm{lr}=0.08$) on the \emph{first annotated frame only}.
+The ring width is recovered as $r = 2\sigma$.
+
+\begin{algorithm}[t]
+\caption{AdvOpt: operating-point discovery via proxy minimisation}
+\label{alg:advopt}
+\begin{algorithmic}[1]
+\Require First frame $\mathbf{F}_0$, first mask $\mathbf{M}_0$, ssim\_floor $\tau$, $n\_\mathrm{iter}$
+\State Initialise $\log\hat{\sigma} \leftarrow \log 12$, $\mathrm{logit}(\hat{\alpha}) \leftarrow 0$ \Comment{$\sigma=12, \alpha=0.5$}
+\State $\mathrm{opt} \leftarrow \mathrm{Adam}([\log\hat{\sigma},\, \mathrm{logit}(\hat{\alpha})],\, \mathrm{lr}=0.08)$
+\For{$i = 1 \ldots n\_\mathrm{iter}$}
+  \State $\sigma \leftarrow \exp(\log\hat{\sigma})$, $\alpha \leftarrow \mathrm{sigmoid}(\mathrm{logit}(\hat{\alpha})) \cdot 0.85 + 0.10$
+  \State $\mathbf{F}'_0 \leftarrow \mathrm{BRS}(\mathbf{F}_0, \mathbf{M}_0; \sigma, \alpha)$ \Comment{Eq.~\ref{eq:brs}, differentiable}
+  \State $\mathcal{L} \leftarrow \mathcal{L}_\mathrm{proxy}(\mathbf{F}'_0, \mathcal{R}) + \mathcal{L}_\mathrm{penalty}(\mathbf{F}'_0, \mathbf{F}_0; \tau)$
+  \State $\mathrm{opt.step}(\nabla \mathcal{L})$
+\EndFor
+\State $r^* \leftarrow 2\sigma$, $\alpha^* \leftarrow \alpha$
+\Return $(r^*, \alpha^*)$ \Comment{Apply globally: $\mathbf{F}'_t = \mathrm{BRS}(\mathbf{F}_t, \mathbf{M}_t; r^*, \alpha^*)$}
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Offline calibration protocol.}
+AdvOpt is run once per video at optimisation time.
+Its output $(r^*, \alpha^*)$ is then used to preprocess \emph{all frames} of that video.
+As our experiments confirm, the near-universal operating point $(r^*{=}24, \alpha^*{\approx}0.93)$ is stable across content (88\% of YT-VOS videos converge there), so the recommended deployment strategy is to run AdvOpt on a calibration set and apply the discovered global-fixed setting $(\hat{r}, \hat{\alpha})$ to new videos without per-video re-optimisation.
+
+\subsection{Evaluation Protocol}
+\label{subsec:eval}
+
+\paragraph{Tracking metric.}
+We measure post-codec tracking degradation as $\Delta\mathrm{JF}_\mathrm{codec} = \mathrm{JF}_\mathrm{clean\text{-}codec} - \mathrm{JF}_\mathrm{adv\text{-}codec}$, where both baselines use the same H.264 CRF=23 codec round-trip. A larger value indicates more tracking degradation (more effective privacy preprocessing).
+
+\paragraph{Quality constraint.}
+Frame quality is measured by SSIM and LPIPS. We target SSIM $\geq 0.90$ per frame as the quality floor.
+
+\paragraph{Prompt protocol.}
+All SAM2 experiments use the first-frame GT mask as a mask prompt. YT-VOS uses the first annotated frame; DAVIS uses the first ground-truth frame.

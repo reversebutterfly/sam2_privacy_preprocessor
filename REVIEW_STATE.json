@@ -1,20 +1,33 @@
 {
-  "round": 4,
-  "threadId": "019d6208-576e-7761-bd12-223f79d7a3da",
-  "status": "completed",
-  "last_score": 6.9,
-  "last_verdict": "Almost — No today, borderline reject if submitted now",
-  "score_progression": [5.8, 6.3, 6.7, 6.9],
+  "round": 1,
+  "loop": 3,
+  "threadId": "019d6b07-dffc-7243-8a59-74eafaeb15fe",
+  "status": "in_progress",
+  "last_score": 7.8,
+  "last_verdict": "Almost — fair YT-VOS JF comparison + proxy narrowing → ready",
+  "score_progression_loop3": [7.8],
+  "score_progression_loop2": [6.6, 7.1, 7.2, 7.1],
+  "score_progression_loop1": [5.8, 6.3, 6.7, 6.9],
   "pending_experiments": [
-    "fancy_r4 (GPU, screen fancy_r4, remaining 54/90 DAVIS videos, ~2h)",
-    "hevc_r4 (GPU, screen hevc_r4, 12/20 HEVC videos remaining, ~45min)"
+    "ytvos_fair_v4 (GPU 4, screen ytvos_fair_v4): idea1(alpha=0.93) vs adv_opt(ssim_floor=0.90), n=50 YT-VOS — ~75 min ETA, 2 videos done"
+  ],
+  "actions_taken_round1": [
+    "Launched ytvos_fair_v4 on GPU 4 (0% contention) — previous v2/v3 had ffmpeg bug / process killed",
+    "Fixed critical O(n^2) Gaussian blur in _gauss_blur_torch → separable 1D convolutions (48x speedup)",
+    "Rewrote introduction.tex for AdvOpt paper with correct contribution bullets",
+    "Fixed abstract.tex: soft surrogate-constrained + offline calibration tool",
+    "Fixed discussion.tex: Protocol Accounting Table + Soft Surrogate Constraint section",
+    "Fixed conclusion.tex: offline calibration tool framing",
+    "Committed all paper changes"
   ],
   "remaining_blockers": [
-    "Full DAVIS sweep to n=90 + rerun analyze_paired_stats.py",
-    "HEVC generalization n=20",
-    "Global-fixed-setting comparison (rw=24, alpha=0.93 universally vs per-video AdvOpt)",
-    "Paper manuscript rewrite (LaTeX) — abstract/discussion/conclusion still describe old paper",
-    "Narrow utility claims to visual quality preservation only"
+    "YT-VOS fair JF comparison (ssim_floor=0.90): ytvos_fair_v4 running on GPU 4, ~75 min ETA",
+    "YT-VOS proxy validation (within-video correlation): not yet done — claim narrowed to DAVIS only",
+    "Alternative perturbation baseline: medium priority, may skip if time-limited"
   ],
-  "timestamp": "2026-04-06T17:15:00"
+  "early_results_ytvos_fair_v4": [
+    "0062f687f1: idea1=3.5pp, adv=3.2pp, alpha=0.927 (adv slightly worse — SSIM=0.887 < 0.90 floor)",
+    "00f88c4f0a: idea1=68.9pp, adv=68.9pp, alpha=0.927 (equal)"
+  ],
+  "timestamp": "2026-04-08T12:10:00"
 }

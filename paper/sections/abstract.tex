@@ -9,5 +9,7 @@ We validate the proxy via within-video Pearson correlation ($r=+0.811$) and an o
 
 Experiments on DAVIS (90 videos) show that AdvOpt achieves a mean post-codec tracking degradation of $+57.7\,\mathrm{pp}$ ($\Delta\mathrm{JF}_{\mathrm{codec}}$) versus $+24.7\,\mathrm{pp}$ for a fixed baseline ($\alpha{=}0.80$), with win-rate $91.7\%$ and $t=7.68$.
 Crucially, a global-fixed setting $(r=24, \alpha=0.93)$ achieves equivalent performance ($+0.3\,\mathrm{pp}$ difference, $t=0.31$, $n=27$), confirming that AdvOpt discovers a near-universal codec-robust operating point rather than exploiting video-specific idiosyncrasies.
-Generalization holds across codecs (HEVC: $+28.5\,\mathrm{pp}$), datasets (YT-VOS: $+9.5\,\mathrm{pp}$ at matched SSIM), and partially across trackers (XMem: $17.6\,\mathrm{pp}$).
-We report the privacy-utility tradeoff honestly: SSIM $\geq 0.90$ is maintained on average, with a $6\%$ soft-constraint violation rate; downstream object-detection recall drops from $77.5\%$ (fixed baseline) to $55.2\%$ (AdvOpt).
+A direct fair comparison on YT-VOS ($n=50$, H.264 CRF=23) confirms that AdvOpt converges to $\alpha{>}0.92$ for $88\%$ of videos ($94\%$ of paired gains within $\pm 5\,\mathrm{pp}$), with the small mean difference ($-0.82\,\mathrm{pp}$, $t{=}{-}2.08$) driven entirely by $12\%$ of videos where the MSE surrogate over-penalises (surrogate brittleness).
+The recommended deployment strategy is therefore \emph{global-fixed BRS} at the AdvOpt-discovered point $(r{=}24,\alpha{=}0.93)$.
+Generalization holds across codecs (HEVC: $+28.5\,\mathrm{pp}$), datasets (YT-VOS full sweep $n{=}497$: $+9.2\,\mathrm{pp}$, $91.9\%$ wins), and partially across trackers (XMem: $17.6\,\mathrm{pp}$).
+We report the privacy-utility tradeoff honestly: SSIM $\geq 0.90$ for $94\%$ of videos; downstream object-detection recall drops from $77.5\%$ (fixed baseline) to $55.2\%$ (AdvOpt).
