@@ -53,7 +53,11 @@ if ROOT not in sys.path:
 from config import SAM2_CHECKPOINT, SAM2_CONFIG, DAVIS_ROOT, DAVIS_MINI_VAL, FFMPEG_PATH
 from src.dataset import load_single_video
 from src.codec_eot import encode_decode_h264, encode_decode_hevc
-from src.brs_utils import multiband_background_proxy, sdf_shell_weights
+from src.brs_utils import (
+    multiband_background_proxy, sdf_shell_weights,
+    normal_transport_proxy, mask_distance_fields,
+    raised_cosine_falloff, add_boundary_block_bias,
+)
 from src.metrics import jf_score, mean_jf
 
 
@@ -306,6 +310,70 @@ def apply_interior_feather(
     return np.clip(result, 0, 255).astype(np.uint8)
 
 
+def apply_asym_hard_proxy(
+    frame_rgb: np.ndarray,
+    mask: np.ndarray,
+    rho: float = 0.08,
+    outer_w: int = 3,
+    outer_alpha: float = 0.20,
+    proxy_mid_gain: float = 0.20,
+    add_block_bias: bool = True,
+    amp_y: float = 2.0,
+    amp_c: float = 5.0,
+    **kwargs,
+) -> np.ndarray:
+    """
+    Asymmetric Hard-Interior Proxy Shell (GPT-5.4 recommended method).
+
+    Design principles:
+    - Hard binary replace of the INTERIOR boundary shell only (seam at true boundary)
+    - Fill with normal-transport proxy (real background texture copied inward)
+    - Exterior barely touched (3px, alpha=0.20) — no visible outer halo
+    - Optional block-chroma split-step for extra codec amplification
+
+    rho:  controls inner_w = clip(rho * sqrt(area/pi), 5, 12)
+    outer_w: exterior taper width in px (keep small, ≤5)
+    outer_alpha: exterior peak blend (keep low, ≤0.30)
+    add_block_bias: whether to apply boundary block chroma/luma split
+    """
+    mask_u8 = (np.asarray(mask) > 0).astype(np.uint8)
+    if mask_u8.sum() == 0:
+        return frame_rgb.copy()
+
+    area = float(mask_u8.sum())
+    r_eq = float(np.sqrt(area / np.pi))
+    inner_w = int(np.clip(round(rho * r_eq), 5, 12))
+
+    dist_in, dist_out = mask_distance_fields(mask_u8)
+    proxy = normal_transport_proxy(
+        frame_rgb, mask_u8,
+        max_out=2 * inner_w + 4,
+        mid_gain=proxy_mid_gain,
+    )
+
+    out = frame_rgb.astype(np.float32).copy()
+
+    # Hard binary replace: interior ring pixels → proxy
+    inner_shell = (mask_u8 > 0) & (dist_in <= inner_w)
+    out[inner_shell] = proxy.astype(np.float32)[inner_shell]
+
+    # Very soft exterior taper to hide the outer seam
+    if outer_w > 0 and outer_alpha > 0:
+        w_out = outer_alpha * raised_cosine_falloff(dist_out, float(outer_w))
+        outer_shell = (mask_u8 == 0) & (dist_out <= outer_w)
+        out[outer_shell] = (
+            out[outer_shell] * (1.0 - w_out[outer_shell, None])
+            + proxy.astype(np.float32)[outer_shell] * w_out[outer_shell, None]
+        )
+
+    result = np.clip(out, 0, 255).astype(np.uint8)
+
+    if add_block_bias:
+        result = add_boundary_block_bias(result, mask_u8, amp_y=amp_y, amp_c=amp_c)
+
+    return result
+
+
 def _apply_old_brs_proxy(frame_rgb: np.ndarray, mask: np.ndarray,
                          dilation_px: int = 24) -> np.ndarray:
     """Archived flat-mean background proxy (pre-2200b7e)."""
@@ -348,6 +416,7 @@ def apply_old_boundary_suppression(
 EDIT_FNS = {
     "idea1":            apply_boundary_suppression,
     "idea1_old":        apply_old_boundary_suppression,
+    "idea1_asym":       apply_asym_hard_proxy,
     "idea2":            apply_echo_contour,
     "combo":            apply_combo,
     "global_blur":      apply_global_blur,
@@ -538,8 +607,21 @@ def codec_round_trip(
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--edit_type", default="combo",
-                   choices=["idea1", "idea1_old", "idea2", "combo", "global_blur", "global_bright"],
-                   help="Which edit to apply: idea1 (new BRS), idea1_old (archived flat-mean BRS), idea2, or combo")
+                   choices=["idea1", "idea1_old", "idea1_asym", "idea2", "combo",
+                            "global_blur", "global_bright"],
+                   help="Which edit: idea1 (new BRS), idea1_old (archived), idea1_asym (asymmetric hard-proxy), idea2, combo")
+    p.add_argument("--asym_rho", type=float, default=0.08,
+                   help="idea1_asym: inner shell = clip(rho*sqrt(area/pi), 5, 12)")
+    p.add_argument("--asym_outer_w", type=int, default=3,
+                   help="idea1_asym: exterior taper width in px")
+    p.add_argument("--asym_outer_alpha", type=float, default=0.20,
+                   help="idea1_asym: exterior peak blend alpha")
+    p.add_argument("--asym_no_block_bias", action="store_true",
+                   help="idea1_asym: disable block-chroma split-step add-on")
+    p.add_argument("--asym_amp_y", type=float, default=2.0,
+                   help="idea1_asym: luma amplitude for block bias")
+    p.add_argument("--asym_amp_c", type=float, default=5.0,
+                   help="idea1_asym: chroma amplitude for block bias")
     p.add_argument("--videos", default="",
                    help="Comma-separated video names (empty = DAVIS_MINI_VAL)")
     p.add_argument("--max_frames", type=int, default=50)
@@ -601,6 +683,16 @@ def edit_params(args) -> dict:
         "proxy_mid_gain": args.proxy_mid_gain,
         "proxy_guard_px": args.proxy_guard_px,
     }
+    if args.edit_type == "idea1_asym":
+        return {
+            "rho": args.asym_rho,
+            "outer_w": args.asym_outer_w,
+            "outer_alpha": args.asym_outer_alpha,
+            "proxy_mid_gain": args.proxy_mid_gain,
+            "add_block_bias": not args.asym_no_block_bias,
+            "amp_y": args.asym_amp_y,
+            "amp_c": args.asym_amp_c,
+        }
     if args.edit_type in ("idea1", "idea1_old"):
         return {"ring_width": args.ring_width, "blend_alpha": args.blend_alpha} \
                if args.edit_type == "idea1_old" else idea1_params

@@ -154,6 +154,65 @@ def multiband_background_proxy(
     return proxy.astype(np.float32)
 
 
+def normal_transport_proxy(
+    frame_rgb: np.ndarray,
+    mask: np.ndarray,
+    max_out: int = 28,
+    smooth_sigma: float = 1.5,
+    mid_gain: float = 0.20,
+) -> np.ndarray:
+    """
+    Normal-transport background proxy.
+
+    For each pixel inside the mask, sample background texture by remapping
+    along the outward surface normal direction (dist_in + 2 px further out).
+    This gives real background texture instead of a blurred mean color.
+
+    Falls back to multiband_background_proxy for pixels whose source
+    location still lands inside the mask.
+    """
+    mask_u8 = binary_mask_u8(mask)
+    if mask_u8.sum() == 0:
+        return frame_rgb.copy()
+
+    dist_in, dist_out = mask_distance_fields(mask_u8)
+
+    # Smooth SDF to get stable normals
+    sdf = dist_out.astype(np.float32) - dist_in.astype(np.float32)
+    sdf_s = cv2.GaussianBlur(sdf, (0, 0), smooth_sigma, borderType=cv2.BORDER_REFLECT)
+
+    gx = cv2.Sobel(sdf_s, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(sdf_s, cv2.CV_32F, 0, 1, ksize=3)
+    norm = np.sqrt(gx * gx + gy * gy) + _EPS
+    nx, ny = gx / norm, gy / norm  # outward unit normals
+
+    H, W = mask_u8.shape
+    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+
+    # Step each interior pixel outward by (dist_in + 2) px to land in background
+    step = np.clip(dist_in + 2.0, 2.0, float(max_out)).astype(np.float32)
+    map_x = (xx + nx * step).astype(np.float32)
+    map_y = (yy + ny * step).astype(np.float32)
+
+    proxy = cv2.remap(
+        frame_rgb.astype(np.float32), map_x, map_y,
+        cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT,
+    )
+
+    # Where remap source still lands inside mask → use multiband fallback
+    src_in_mask = cv2.remap(
+        mask_u8.astype(np.float32), map_x, map_y,
+        cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT,
+    )
+    fallback = multiband_background_proxy(
+        frame_rgb, mask_u8,
+        dilation_px=max_out * 2,
+        mid_gain=mid_gain,
+    ).astype(np.float32)
+    proxy[src_in_mask > 0.5] = fallback[src_in_mask > 0.5]
+    return proxy
+
+
 def mask_distance_fields(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Return inside/outside Euclidean distance fields in pixels."""
     mask_u8 = binary_mask_u8(mask)
@@ -209,3 +268,58 @@ def sdf_shell_weights(
     ).astype(np.float32)
     shell = ((w_in > 0) | (w_out > 0)).astype(np.uint8)
     return weight, shell, dist_in, dist_out
+
+
+def add_boundary_block_bias(
+    frame_rgb: np.ndarray,
+    mask: np.ndarray,
+    max_dist: int = 4,
+    amp_y: float = 2.0,
+    amp_c: float = 5.0,
+    block: int = 8,
+) -> np.ndarray:
+    """
+    Block-aligned low-frequency chroma/luma split at boundary-crossing DCT blocks.
+
+    For each 8×8 block that straddles the object boundary, add a low-frequency
+    split-step bias in Y/Cr/Cb proportional to signed distance from the boundary.
+    This creates a codec-visible discontinuity in blocks that H.264 must encode
+    as large AC coefficients — amplified to artifacts post-decode.
+
+    Unlike checkerboard patterns, this low-frequency split survives quantization
+    better while remaining below the human JND threshold in textured regions.
+    """
+    mask_u8 = binary_mask_u8(mask)
+    if mask_u8.sum() == 0:
+        return frame_rgb.copy()
+
+    dist_in, dist_out = mask_distance_fields(mask_u8)
+    signed = dist_out.astype(np.float32) - dist_in.astype(np.float32)
+
+    ycc = cv2.cvtColor(frame_rgb.astype(np.uint8), cv2.COLOR_RGB2YCrCb).astype(np.float32)
+    H, W = mask_u8.shape
+
+    for y0 in range(0, H, block):
+        for x0 in range(0, W, block):
+            ys = slice(y0, min(y0 + block, H))
+            xs = slice(x0, min(x0 + block, W))
+            mb = mask_u8[ys, xs]
+            if mb.min() == mb.max():
+                continue  # pure interior or pure exterior — skip
+
+            sb = signed[ys, xs]
+            support = (np.abs(sb) <= max_dist).astype(np.float32)
+
+            # Low-frequency split: continuous ramp across boundary, clamped to [-1, 1]
+            basis = np.clip(-sb / float(max_dist), -1.0, 1.0) * support
+
+            # Texture masking: reduce amplitude in flat (low-variance) regions
+            var_y = float(np.var(ycc[ys, xs, 0]))
+            tm = float(np.clip(var_y / 64.0, 0.35, 1.0))
+
+            ycc[ys, xs, 0] += amp_y * tm * basis
+            ycc[ys, xs, 1] += amp_c * tm * basis
+            ycc[ys, xs, 2] -= amp_c * tm * basis
+
+    ycc = np.clip(ycc, 0, 255).astype(np.uint8)
+    return cv2.cvtColor(ycc, cv2.COLOR_YCrCb2RGB)
