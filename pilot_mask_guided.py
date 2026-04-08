@@ -306,8 +306,48 @@ def apply_interior_feather(
     return np.clip(result, 0, 255).astype(np.uint8)
 
 
+def _apply_old_brs_proxy(frame_rgb: np.ndarray, mask: np.ndarray,
+                         dilation_px: int = 24) -> np.ndarray:
+    """Archived flat-mean background proxy (pre-2200b7e)."""
+    kernel = np.ones((dilation_px * 2 + 1,) * 2, np.uint8)
+    dilated = cv2.dilate(mask, kernel)
+    bg_mask = (dilated > 0) & (mask == 0)
+    proxy = frame_rgb.astype(np.float32).copy()
+    if bg_mask.sum() < 10:
+        proxy[:] = frame_rgb.mean(axis=(0, 1))
+    else:
+        proxy[mask > 0] = frame_rgb[bg_mask].mean(axis=0)
+    return cv2.GaussianBlur(proxy, (0, 0), max(dilation_px // 2, 5))
+
+
+def apply_old_boundary_suppression(
+    frame_rgb: np.ndarray,
+    mask: np.ndarray,
+    ring_width: int = 16,
+    blend_alpha: float = 0.6,
+    **kwargs,
+) -> np.ndarray:
+    """Old BRS (archived): square morphological kernel + flat-mean proxy."""
+    if mask.sum() == 0:
+        return frame_rgb.copy()
+    kernel = np.ones((ring_width * 2 + 1,) * 2, np.uint8)
+    dilated = cv2.dilate(mask, kernel)
+    eroded = cv2.erode(mask, kernel)
+    boundary_ring = ((dilated > 0) & (eroded == 0)).astype(np.uint8)
+    if boundary_ring.sum() == 0:
+        return frame_rgb.copy()
+    bg_proxy = _apply_old_brs_proxy(frame_rgb, mask, dilation_px=ring_width * 2)
+    ring_float = boundary_ring.astype(np.float32)
+    ring_smooth = cv2.GaussianBlur(ring_float, (0, 0), ring_width / 2.0)
+    ring_smooth = np.clip(ring_smooth * blend_alpha, 0.0, blend_alpha)
+    f = frame_rgb.astype(np.float32)
+    w = ring_smooth[:, :, None]
+    return np.clip(f * (1 - w) + bg_proxy * w, 0, 255).astype(np.uint8)
+
+
 EDIT_FNS = {
     "idea1":            apply_boundary_suppression,
+    "idea1_old":        apply_old_boundary_suppression,
     "idea2":            apply_echo_contour,
     "combo":            apply_combo,
     "global_blur":      apply_global_blur,
@@ -498,8 +538,8 @@ def codec_round_trip(
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--edit_type", default="combo",
-                   choices=["idea1", "idea2", "combo", "global_blur", "global_bright"],
-                   help="Which edit to apply: idea1, idea2, or combo")
+                   choices=["idea1", "idea1_old", "idea2", "combo", "global_blur", "global_bright"],
+                   help="Which edit to apply: idea1 (new BRS), idea1_old (archived flat-mean BRS), idea2, or combo")
     p.add_argument("--videos", default="",
                    help="Comma-separated video names (empty = DAVIS_MINI_VAL)")
     p.add_argument("--max_frames", type=int, default=50)
@@ -561,8 +601,9 @@ def edit_params(args) -> dict:
         "proxy_mid_gain": args.proxy_mid_gain,
         "proxy_guard_px": args.proxy_guard_px,
     }
-    if args.edit_type == "idea1":
-        return idea1_params
+    if args.edit_type in ("idea1", "idea1_old"):
+        return {"ring_width": args.ring_width, "blend_alpha": args.blend_alpha} \
+               if args.edit_type == "idea1_old" else idea1_params
     elif args.edit_type == "idea2":
         return {"halo_offset": args.halo_offset, "halo_width": args.halo_width,
                 "halo_strength": args.halo_strength}
