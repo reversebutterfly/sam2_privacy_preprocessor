@@ -53,37 +53,36 @@ if ROOT not in sys.path:
 from config import SAM2_CHECKPOINT, SAM2_CONFIG, DAVIS_ROOT, DAVIS_MINI_VAL, FFMPEG_PATH
 from src.dataset import load_single_video
 from src.codec_eot import encode_decode_h264, encode_decode_hevc
+from src.brs_utils import multiband_background_proxy, sdf_shell_weights
 from src.metrics import jf_score, mean_jf
 
 
 # ── Edit Functions ─────────────────────────────────────────────────────────────
 
 def _background_proxy(frame_rgb: np.ndarray, mask: np.ndarray,
-                      dilation_px: int = 24) -> np.ndarray:
+                      dilation_px: int = 24,
+                      low_sigma: Optional[float] = None,
+                      band_sigma_small: Optional[float] = None,
+                      band_sigma_large: Optional[float] = None,
+                      mid_gain: float = 0.25,
+                      guard_px: int = 2) -> np.ndarray:
     """
-    Sample the local background just outside the mask as a proxy color field.
-    Returns an image of the same shape where each pixel contains the nearby
-    background mean (blurred to be smooth / low-frequency).
+    Multi-band normalized-convolution background proxy.
+
+    Replaces the old flat-color fill with:
+      1. a low-frequency normalized-convolution RGB field, and
+      2. a transported mid-band residual for local texture/color variation.
     """
-    kernel = np.ones((dilation_px * 2 + 1,) * 2, np.uint8)
-    # dilated mask region = object + surroundings
-    dilated = cv2.dilate(mask, kernel)
-    bg_mask = (dilated > 0) & (mask == 0)  # ring just outside object
-
-    proxy = frame_rgb.astype(np.float32).copy()
-    if bg_mask.sum() < 10:
-        # fallback: use the full image mean
-        bg_color = frame_rgb.mean(axis=(0, 1))
-        proxy[:] = bg_color
-    else:
-        # fill object region with a blurred version of the background ring
-        bg_mean = frame_rgb[bg_mask].mean(axis=0)  # (3,)
-        proxy[mask > 0] = bg_mean
-
-    # Heavy gaussian blur to make it smooth / low-frequency
-    sigma = max(dilation_px // 2, 5)
-    proxy = cv2.GaussianBlur(proxy, (0, 0), sigma)
-    return proxy
+    return multiband_background_proxy(
+        frame_rgb,
+        mask,
+        dilation_px=dilation_px,
+        low_sigma=low_sigma,
+        band_sigma_small=band_sigma_small,
+        band_sigma_large=band_sigma_large,
+        mid_gain=mid_gain,
+        guard_px=guard_px,
+    )
 
 
 def apply_boundary_suppression(
@@ -91,42 +90,64 @@ def apply_boundary_suppression(
     mask: np.ndarray,
     ring_width: int = 16,
     blend_alpha: float = 0.6,
+    outer_ring_width: Optional[int] = None,
+    outer_alpha: Optional[float] = None,
+    proxy_low_sigma: Optional[float] = None,
+    proxy_band_small_sigma: Optional[float] = None,
+    proxy_band_large_sigma: Optional[float] = None,
+    proxy_mid_gain: float = 0.25,
+    proxy_guard_px: int = 2,
     **kwargs,
 ) -> np.ndarray:
     """
     Idea 1: Alpha-matte boundary suppression.
 
-    Blend a ring of `ring_width` pixels around the mask boundary
-    toward the local background proxy, reducing figure-ground separability.
+    Blend an SDF shell around the mask boundary toward a multi-band
+    normalized-convolution background proxy, reducing figure-ground
+    separability while avoiding the old flat-color blob artifact.
 
-    ring_width:  half-width of the boundary ring in pixels
-    blend_alpha: blend strength toward background (0=no change, 1=full bg)
+    ring_width:       inside-shell width in pixels
+    blend_alpha:      peak inside-shell blend strength
+    outer_ring_width: outside-shell width; defaults to a narrower shell
+    outer_alpha:      outside-shell peak blend; defaults to a weaker shell
     """
     if mask.sum() == 0:
         return frame_rgb.copy()
 
-    # Build interior and exterior boundary rings
-    kernel = np.ones((ring_width * 2 + 1,) * 2, np.uint8)
-    dilated  = cv2.dilate(mask, kernel)
-    eroded   = cv2.erode(mask, kernel)
+    outer_ring_width = (
+        max(2, int(round(ring_width * 0.55)))
+        if outer_ring_width is None
+        else int(outer_ring_width)
+    )
+    outer_alpha = (
+        float(blend_alpha * 0.65)
+        if outer_alpha is None
+        else float(outer_alpha)
+    )
 
-    # Boundary ring = pixels that are in (dilated - eroded)
-    boundary_ring = ((dilated > 0) & (eroded == 0)).astype(np.uint8)
-
+    ring_weight, boundary_ring, _, _ = sdf_shell_weights(
+        mask,
+        inner_width_px=ring_width,
+        outer_width_px=outer_ring_width,
+        inner_alpha=blend_alpha,
+        outer_alpha=outer_alpha,
+    )
     if boundary_ring.sum() == 0:
         return frame_rgb.copy()
 
-    # Build smooth background proxy
-    bg_proxy = _background_proxy(frame_rgb, mask, dilation_px=ring_width * 2)
+    bg_proxy = _background_proxy(
+        frame_rgb,
+        mask,
+        dilation_px=max(ring_width, outer_ring_width) * 2,
+        low_sigma=proxy_low_sigma,
+        band_sigma_small=proxy_band_small_sigma,
+        band_sigma_large=proxy_band_large_sigma,
+        mid_gain=proxy_mid_gain,
+        guard_px=proxy_guard_px,
+    )
 
-    # Build smooth blend weight for the ring (feathered)
-    ring_float = boundary_ring.astype(np.float32)
-    ring_smooth = cv2.GaussianBlur(ring_float, (0, 0), ring_width / 2.0)
-    ring_smooth = np.clip(ring_smooth * blend_alpha, 0.0, blend_alpha)
-
-    # Apply blend
     f = frame_rgb.astype(np.float32)
-    w = ring_smooth[:, :, None]
+    w = ring_weight[:, :, None]
     edited = f * (1 - w) + bg_proxy * w
     return np.clip(edited, 0, 255).astype(np.uint8)
 
@@ -245,18 +266,18 @@ def apply_boundary_blur(
     """
     if mask.sum() == 0:
         return frame_rgb.copy()
-    kernel = np.ones((ring_width * 2 + 1,) * 2, np.uint8)
-    dilated = cv2.dilate(mask, kernel)
-    eroded  = cv2.erode(mask, kernel)
-    ring = ((dilated > 0) & (eroded == 0)).astype(np.uint8)
+    ring_weight, ring, _, _ = sdf_shell_weights(
+        mask,
+        inner_width_px=ring_width,
+        outer_width_px=max(2, int(round(ring_width * 0.55))),
+        inner_alpha=blend_alpha,
+        outer_alpha=blend_alpha * 0.65,
+    )
     if ring.sum() == 0:
         return frame_rgb.copy()
     sigma   = max(ring_width / 2.0, 3.0)
     blurred = cv2.GaussianBlur(frame_rgb.astype(np.float32), (0, 0), sigma)
-    ring_w  = np.clip(
-        cv2.GaussianBlur(ring.astype(np.float32), (0, 0), sigma / 2.0) * blend_alpha,
-        0.0, blend_alpha,
-    )[:, :, None]
+    ring_w  = ring_weight[:, :, None]
     result = frame_rgb.astype(np.float32) * (1 - ring_w) + blurred * ring_w
     return np.clip(result, 0, 255).astype(np.uint8)
 
@@ -490,6 +511,14 @@ def parse_args():
     # Idea 1 params
     p.add_argument("--ring_width",   type=int,   default=16)
     p.add_argument("--blend_alpha",  type=float, default=0.6)
+    p.add_argument("--outer_ring_width", type=int, default=0,
+                   help="Outside-shell width in pixels; <=0 uses auto ratio from ring_width.")
+    p.add_argument("--outer_alpha", type=float, default=-1.0,
+                   help="Outside-shell peak blend alpha; <0 uses auto ratio from blend_alpha.")
+    p.add_argument("--proxy_mid_gain", type=float, default=0.25,
+                   help="Mid-band texture gain for the normalized-convolution proxy.")
+    p.add_argument("--proxy_guard_px", type=int, default=2,
+                   help="Guard band outside the mask excluded from proxy sampling.")
     # Idea 2 params
     p.add_argument("--halo_offset",   type=int,   default=8)
     p.add_argument("--halo_width",    type=int,   default=12)
@@ -524,8 +553,16 @@ def parse_args():
 
 def edit_params(args) -> dict:
     """Collect edit parameters from args into a dict for EDIT_FNS."""
+    idea1_params = {
+        "ring_width": args.ring_width,
+        "blend_alpha": args.blend_alpha,
+        "outer_ring_width": None if args.outer_ring_width <= 0 else args.outer_ring_width,
+        "outer_alpha": None if args.outer_alpha < 0 else args.outer_alpha,
+        "proxy_mid_gain": args.proxy_mid_gain,
+        "proxy_guard_px": args.proxy_guard_px,
+    }
     if args.edit_type == "idea1":
-        return {"ring_width": args.ring_width, "blend_alpha": args.blend_alpha}
+        return idea1_params
     elif args.edit_type == "idea2":
         return {"halo_offset": args.halo_offset, "halo_width": args.halo_width,
                 "halo_strength": args.halo_strength}
@@ -533,7 +570,7 @@ def edit_params(args) -> dict:
         return {"ring_width": args.ring_width, "blend_alpha": args.blend_alpha}
     else:  # combo
         return {
-            "ring_width": args.ring_width, "blend_alpha": args.blend_alpha,
+            **idea1_params,
             "halo_offset": args.halo_offset, "halo_width": args.halo_width,
             "halo_strength": args.halo_strength,
         }
