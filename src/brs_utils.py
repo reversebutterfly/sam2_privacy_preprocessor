@@ -207,17 +207,19 @@ def normal_transport_proxy(
         cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT,
     )
 
-    # Where remap source still lands inside mask → use multiband fallback
+    # Where remap source still lands inside mask → fast blur fallback
+    # (only computed lazily; skipped entirely when remap succeeds everywhere)
     src_in_mask = cv2.remap(
         mask_u8.astype(np.float32), map_x, map_y,
         cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT,
     )
-    fallback = multiband_background_proxy(
-        frame_rgb, mask_u8,
-        dilation_px=max_out * 2,
-        mid_gain=mid_gain,
-    ).astype(np.float32)
-    proxy[src_in_mask > 0.5] = fallback[src_in_mask > 0.5]
+    if src_in_mask.max() > 0.5:
+        sigma_fb = max(float(max_out) / 3.0, 4.0)
+        fallback = cv2.GaussianBlur(
+            frame_rgb.astype(np.float32), (0, 0), sigma_fb,
+            borderType=cv2.BORDER_REFLECT,
+        )
+        proxy[src_in_mask > 0.5] = fallback[src_in_mask > 0.5]
     return proxy
 
 
