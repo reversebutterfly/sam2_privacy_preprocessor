@@ -314,27 +314,31 @@ def apply_asym_hard_proxy(
     frame_rgb: np.ndarray,
     mask: np.ndarray,
     rho: float = 0.08,
+    inner_cap: int = 18,
+    core_w: int = 4,
+    core_beta: float = 0.45,
     outer_w: int = 3,
     outer_alpha: float = 0.20,
     proxy_mid_gain: float = 0.20,
     add_block_bias: bool = True,
     amp_y: float = 2.0,
-    amp_c: float = 5.0,
+    amp_c: float = 8.0,
     **kwargs,
 ) -> np.ndarray:
     """
-    Asymmetric Hard-Interior Proxy Shell (GPT-5.4 recommended method).
+    Asymmetric Hard-Interior Proxy Shell with Two-Zone Interior (v2).
 
-    Design principles:
-    - Hard binary replace of the INTERIOR boundary shell only (seam at true boundary)
-    - Fill with normal-transport proxy (real background texture copied inward)
-    - Exterior barely touched (3px, alpha=0.20) — no visible outer halo
-    - Optional block-chroma split-step for extra codec amplification
+    Zone A — low-entropy core (first core_w px inside boundary):
+      blend of transport + blurred-transport to create a low-variance region
+      that H.264 DCT cannot encode cleanly → ringing artifacts post-decode.
+    Zone B — textured transport body (remaining inner shell):
+      real background texture copied along surface normals; looks natural.
+    Exterior — tiny taper (outer_w=3px) to hide the outer seam.
 
-    rho:  controls inner_w = clip(rho * sqrt(area/pi), 5, 12)
-    outer_w: exterior taper width in px (keep small, ≤5)
-    outer_alpha: exterior peak blend (keep low, ≤0.30)
-    add_block_bias: whether to apply boundary block chroma/luma split
+    inner_cap: maximum inner_w in pixels (raised to 18 from prior 12)
+    core_w: Zone A width in px (low-entropy boundary strip)
+    core_beta: blend weight toward low-entropy in Zone A (0=pure transport, 1=blurred)
+    amp_c: block-bias chroma amplitude (raised to 8 for stronger codec effect)
     """
     mask_u8 = (np.asarray(mask) > 0).astype(np.uint8)
     if mask_u8.sum() == 0:
@@ -342,30 +346,42 @@ def apply_asym_hard_proxy(
 
     area = float(mask_u8.sum())
     r_eq = float(np.sqrt(area / np.pi))
-    inner_w = int(np.clip(round(rho * r_eq), 5, 12))
+    inner_w = int(np.clip(round(rho * r_eq), 5, int(inner_cap)))
+    core_w_eff = int(np.clip(core_w, 0, max(inner_w - 1, 0)))
 
     dist_in, dist_out = mask_distance_fields(mask_u8)
-    proxy = normal_transport_proxy(
+    transport = normal_transport_proxy(
         frame_rgb, mask_u8,
         max_out=2 * inner_w + 4,
         mid_gain=proxy_mid_gain,
         _dist_in=dist_in,
         _dist_out=dist_out,
     )
+    transport_f = transport.astype(np.float32)
+
+    # Zone A: low-entropy core — blend transport with locally-blurred version
+    lowent = cv2.GaussianBlur(
+        transport, (0, 0), 3.5, borderType=cv2.BORDER_REFLECT,
+    ).astype(np.float32)
 
     out = frame_rgb.astype(np.float32).copy()
 
-    # Hard binary replace: interior ring pixels → proxy
-    inner_shell = (mask_u8 > 0) & (dist_in <= inner_w)
-    out[inner_shell] = proxy.astype(np.float32)[inner_shell]
+    if core_w_eff > 0:
+        core_shell = (mask_u8 > 0) & (dist_in <= core_w_eff)
+        fill_core = (1.0 - core_beta) * transport_f + core_beta * lowent
+        out[core_shell] = fill_core[core_shell]
 
-    # Very soft exterior taper to hide the outer seam
+    # Zone B: textured transport body
+    body_shell = (mask_u8 > 0) & (dist_in > core_w_eff) & (dist_in <= inner_w)
+    out[body_shell] = transport_f[body_shell]
+
+    # Exterior: tiny soft taper
     if outer_w > 0 and outer_alpha > 0:
         w_out = outer_alpha * raised_cosine_falloff(dist_out, float(outer_w))
         outer_shell = (mask_u8 == 0) & (dist_out <= outer_w)
         out[outer_shell] = (
             out[outer_shell] * (1.0 - w_out[outer_shell, None])
-            + proxy.astype(np.float32)[outer_shell] * w_out[outer_shell, None]
+            + transport_f[outer_shell] * w_out[outer_shell, None]
         )
 
     result = np.clip(out, 0, 255).astype(np.uint8)
@@ -613,7 +629,13 @@ def parse_args():
                             "global_blur", "global_bright"],
                    help="Which edit: idea1 (new BRS), idea1_old (archived), idea1_asym (asymmetric hard-proxy), idea2, combo")
     p.add_argument("--asym_rho", type=float, default=0.08,
-                   help="idea1_asym: inner shell = clip(rho*sqrt(area/pi), 5, 12)")
+                   help="idea1_asym: inner shell = clip(rho*sqrt(area/pi), 5, inner_cap)")
+    p.add_argument("--asym_inner_cap", type=int, default=18,
+                   help="idea1_asym: max inner shell width in px (raised from 12)")
+    p.add_argument("--asym_core_w", type=int, default=4,
+                   help="idea1_asym: Zone A (low-entropy core) width in px")
+    p.add_argument("--asym_core_beta", type=float, default=0.45,
+                   help="idea1_asym: Zone A blend weight toward low-entropy (0=pure transport)")
     p.add_argument("--asym_outer_w", type=int, default=3,
                    help="idea1_asym: exterior taper width in px")
     p.add_argument("--asym_outer_alpha", type=float, default=0.20,
@@ -622,8 +644,8 @@ def parse_args():
                    help="idea1_asym: disable block-chroma split-step add-on")
     p.add_argument("--asym_amp_y", type=float, default=2.0,
                    help="idea1_asym: luma amplitude for block bias")
-    p.add_argument("--asym_amp_c", type=float, default=5.0,
-                   help="idea1_asym: chroma amplitude for block bias")
+    p.add_argument("--asym_amp_c", type=float, default=8.0,
+                   help="idea1_asym: chroma amplitude for block bias (raised to 8)")
     p.add_argument("--videos", default="",
                    help="Comma-separated video names (empty = DAVIS_MINI_VAL)")
     p.add_argument("--max_frames", type=int, default=50)
@@ -688,6 +710,9 @@ def edit_params(args) -> dict:
     if args.edit_type == "idea1_asym":
         return {
             "rho": args.asym_rho,
+            "inner_cap": args.asym_inner_cap,
+            "core_w": args.asym_core_w,
+            "core_beta": args.asym_core_beta,
             "outer_w": args.asym_outer_w,
             "outer_alpha": args.asym_outer_alpha,
             "proxy_mid_gain": args.proxy_mid_gain,
