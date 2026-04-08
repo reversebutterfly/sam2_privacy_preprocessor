@@ -36,11 +36,12 @@ The DAVIS main sweep uses $n=36$ of 90 videos; the full 90-video sweep is ongoin
 The central finding---that a global-fixed setting $(r=24,\alpha=0.93)$ matches per-video AdvOpt on DAVIS ($n=27$, $+0.3\,\mathrm{pp}$, $t=0.31$)---should be interpreted carefully.
 It does not mean AdvOpt is unnecessary. It means AdvOpt \emph{discovered} that $\alpha\approx 0.93$ is the near-universal codec-robust operating point, which was not known \emph{a priori}.
 The intuitive starting point is $\alpha=0.80$ (idea1), which leaves $\sim 33\,\mathrm{pp}$ of privacy gain on the table.
-The proxy (within-video $r=+0.811$, oracle gap 98\%) validates that AdvOpt reliably finds this optimal point under the quality constraint, rather than by exhaustive search.
+The proxy (within-video $r=+0.811$, oracle gap 98\%, both on DAVIS) validates that AdvOpt reliably finds this optimal point under the quality constraint, rather than by exhaustive search.
+We note that proxy validation is conducted on DAVIS; transfer to YT-VOS and HEVC is supported by the convergence of AdvOpt's selected $\alpha$ to the same operating point ($94\%$ of YT-VOS videos converge to $\alpha\in[0.92,0.93)$ under ssim\_floor=0.90), but within-video proxy correlation on YT-VOS is not yet available and is left for future work.
 
 On heterogeneous content (YT-VOS), $12\%$ of videos genuinely require lower $\alpha$ to satisfy the SSIM constraint.
 For these videos, per-video selection via AdvOpt is necessary; a global fixed setting would violate the quality bound.
-The proxy correctly identifies these constraint-bound cases.
+The AdvOpt optimizer identifies these constraint-bound cases and selects a conservative $\alpha$, as confirmed by the alpha distribution on YT-VOS.
 
 \subsection{Soft Surrogate Constraint: Scope and Violations}
 
@@ -67,7 +68,7 @@ The method is not tracker-agnostic: its effectiveness depends on the target trac
 
 \subsection{Limitations}
 
-\paragraph{Proxy scope.} The proxy and oracle-gap experiments are validated on DAVIS. YT-VOS proxy validation (within-video correlation) is not yet available.
+\paragraph{Proxy scope.} The proxy and oracle-gap experiments are validated on DAVIS ($n=88$). YT-VOS proxy validation (within-video correlation) is not yet available. The convergence of AdvOpt's selected $\alpha$ to $[0.92, 0.93)$ on $94\%$ of YT-VOS videos provides indirect evidence of proxy reliability, but a direct within-video correlation study on YT-VOS is needed to confirm generalization. We therefore restrict proxy-validated claims to DAVIS in the main results, with YT-VOS and HEVC presented as generalization evidence rather than proxy validation.
 
 \paragraph{Single backbone.} All experiments use SAM2.1 hiera\_tiny. Larger SAM2 variants (Small, Large) may differ in boundary-feature reliance.
 
