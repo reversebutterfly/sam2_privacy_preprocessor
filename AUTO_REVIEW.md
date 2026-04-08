@@ -236,6 +236,264 @@ AdvOpt materially changes the picture. The oracle-gap result (98% proxy-oracle m
 
 ---
 
+---
+
+# New Auto-Review Loop — 2026-04-06 (AdvOpt Continuation)
+**Goal**: Full sweep + generalization: YT-VOS full, global-fixed comparison, cross-tracker
+**MAX_ROUNDS**: 4  
+**Prior loop score**: 6.9/10 (MAX_ROUNDS reached, status=completed)
+**New threadId**: 019d632e-19b0-77b0-80e5-d75bfd69d191
+
+## Round 1 (2026-04-06, new loop — full results at start)
+
+### Assessment (Summary)
+- **AAAI Score**: 6.6/10
+- **Verdict**: No today, but close — "proxy-validated constrained selection" framing viable
+- **Key finding**: paper viable only if framed honestly as collapsing to global point (DAVIS) + heterogeneous adaptation (YT-VOS)
+
+### Key Criticisms
+1. Main novelty unstable — global-fixed comparison not yet run; adaptation claim may be oversold
+2. Paper tells wrong story — still structured around gradient optimization, not proxy validation
+3. Utility tradeoff substantial — YOLO recall 55% is meaningful degradation
+4. Generalization incomplete — HEVC n=17, YT-VOS full pending, no second tracker
+5. Manuscript hard blocker — local draft still describes old negative-result paper
+
+### Reviewer Raw Response
+See: RESEARCH_REVIEW_ADVOPT_ROUND1_20260406.md
+
+### Actions Taken (Phase C Round 1 — new loop)
+1. Launched global-fixed comparison (DAVIS): idea1(rw=24,α=0.93) vs adv_opt — `screen global_fixed` GPU 4
+2. Launched XMem cross-tracker experiment: idea1(rw=24,α=0.93) through XMem — `screen xmem_adv` GPU 2
+3. Launched full YT-VOS sweep (507 videos): `screen ytvos_full` GPU 0
+4. Launched YT-VOS global-fixed comparison (50 videos, idea1_alpha=0.93): `screen ytvos_gfixed` GPU 3
+5. Committed and pushed analyze_proxy_table.py + review docs
+
+### Early Results (Phase D)
+- Global-fixed DAVIS (n=7 preliminary): idea1(α=0.93)=58.6pp vs adv_opt=59.7pp, +1.0pp gain (t=0.98, not sig)
+  → DAVIS collapses — per-video adaptation gives negligible additional benefit
+- XMem cross-tracker (n=8): mean ΔJF_codec=13.1pp (vs SAM2 ~58pp), SSIM not saved in schema
+  → Boundary suppression generalizes to XMem; smaller effect consistent with memory-based tracking
+- YT-VOS global-fixed: just launched, results pending
+
+### Status
+- Continuing to Round 2
+
+---
+
+## Round 2 (2026-04-06, new loop)
+
+### Assessment (Summary)
+- **AAAI Score**: 7.1/10 — crossed 7/10 threshold!
+- **Verdict**: Almost — "in plausible AAAI accept territory" after YT-VOS fixed comparison + manuscript rewrite
+- **Key finding**: Global-fixed DAVIS definitively resolves adaptation claim; paper narrative now correctly framed as "operating-point discovery"
+
+### Key Progress Since Round 1
+- Global-fixed DAVIS (n=10): +0.1pp, t=0.14, win-rate 50% — DAVIS collapses ✓
+- XMem cross-tracker (n=18): 18.1pp — generalization verified ✓
+- HEVC confirmed (n=17): +28.5pp, t=4.20, wins=88.2% ✓
+- Score: 6.6 → 7.1/10
+
+### Reviewer Raw Response
+
+<details>
+<summary>Click to expand full reviewer response</summary>
+
+Score: 7.1/10, Verdict: Almost
+
+Q1: Global-fixed result materially resolves adaptation claim (but n=10 still thin for central headline result).
+Q2: YT-VOS theoretical prediction not sufficient — need quantitative fixed-vs-opt with SSIM-violation counts.
+Q3: XMem 18.1pp meets "one generalization axis" requirement with caveat (boundary transfer, not full proxy-selection story).
+Q4: No blocker worse than rewrite; YT-VOS fixed-vs-opt quantitative confirmation is second priority.
+
+Revised claim: "AdvOpt is a proxy-validated operating-point discovery and constrained selection method. On homogeneous data (DAVIS), collapses to near-universal setting. On heterogeneous data (YT-VOS), constrained per-video selection may remain useful."
+
+Remaining Weaknesses:
+1. YT-VOS heterogeneity claim one experiment short (need fixed-vs-opt with SSIM violations)
+2. Proxy not validated on YT-VOS (where adaptation supposedly matters most)
+3. DAVIS fixed-vs-opt n=10 too small for central claim
+4. Utility tradeoff framing still weak (needs explicit privacy-utility tradeoff)
+5. XMem limited transfer evidence — do not oversell
+6. Manuscript rewrite still hard blocker
+
+Minimum Fixes:
+1. Finish YT-VOS fixed alpha=0.93 vs adv_opt with SSIM-bound violation counts
+2. YT-VOS proxy validation table (oracle gap or rank consistency)
+3. Expand DAVIS fixed-vs-opt to n≥20 or present collapsed parameter distribution
+4. Rewrite paper around constrained operating-point discovery
+5. Keep XMem as short generalization section only
+
+</details>
+
+### Actions Taken (Phase C Round 2)
+1. YT-VOS global-fixed experiment running (ytvos_gfixed, GPU 3): idea1(alpha=0.93) on 50 videos
+2. Monitoring global_fixed DAVIS (GPU 4): accumulating toward n≥20
+3. Will compare YT-VOS idea1(alpha=0.93) vs adv_opt from ytvos_adv_n50 cross-run
+4. Will compute YT-VOS SSIM violation rate for fixed alpha=0.93
+
+### Status
+- Continuing to Round 3
+
+---
+
+## Round 3 (2026-04-06, new loop)
+
+### Assessment (Summary)
+- **AAAI Score**: 7.2/10 (+0.1 from Round 2)
+- **Verdict**: Almost — "coherent AAAI paper" but not "submit today Yes"
+- **Key finding**: n=27 definitively closes DAVIS; 88% YT-VOS converges to global-fixed; proxy still only validated on DAVIS
+
+### Key Progress Since Round 2
+- Global-fixed DAVIS (n=27): +0.3pp, t=0.31, win-rate=48.1% — definitively zero ✓
+- YT-VOS alpha distribution: 44/50 = 88% converges to [0.92,0.93), 6 outliers need lower alpha ✓
+- SSIM violation accounting: adv_opt SSIM<0.90 for 3/50 = 6% (soft constraint) ✓
+- XMem (n=19): 17.6pp mean — cross-tracker verified ✓
+
+### Reviewer Raw Response
+
+<details>
+<summary>Click to expand full reviewer response</summary>
+
+Score: 7.2/10, Verdict: Almost
+
+Global-fixed n=27 closes DAVIS definitively. 88% YT-VOS convergence weakens heterogeneous adaptation but strengthens "near-universal operating point" claim. XMem meets generalization requirement.
+
+Key remaining weaknesses:
+1. SSIM constraint is soft (3/50 = 6% violations with adv_opt). Must report explicitly.
+2. YT-VOS global-fixed comparison still pending (theoretical argument + 1 result insufficient)
+3. Proxy validation only on DAVIS — where YT-VOS edge-case adaptation lives, proxy not validated
+4. Novelty narrower than before — requires disciplined writing
+5. Utility loss must be framed as deliberate tradeoff
+
+Minimum fixes for Round 4:
+1. Finish YT-VOS fixed(0.93) vs adv_opt with SSIM violation counts
+2. Clarify SSIM soft vs hard constraint explicitly
+3. Rewrite title/abstract/intro/contributions around one thesis
+4. Demote optimization mechanics to implementation detail
+
+</details>
+
+### Actions Taken (Phase C Round 3)
+1. Computed SSIM violation rates: adv_opt SSIM<0.90 → 3/50=6% (all high-alpha videos, approximation error)
+2. YT-VOS global-fixed experiment still running (720p frames, slower than expected ~50-110s/video)
+3. Waiting for 10+ results before final Round 4 review
+
+### Status
+- Continuing to Round 4 (FINAL) after ytvos_global_fixed accumulates ≥10 results
+
+---
+
+## Round 4 (2026-04-07, new loop — FINAL ROUND)
+
+### Assessment (Summary)
+- **AAAI Score**: 7.1/10 (slight drop from 7.2 due to YT-VOS ssim_floor artifact finding)
+- **Verdict**: Almost
+- **Key finding**: YT-VOS global-fixed experiment revealed ssim_floor mismatch (0.92 vs paper's 0.90); one clean paired comparison missing
+
+### Key Progress Since Round 3
+- YT-VOS global-fixed (n=50, ssim_floor=0.92) COMPLETED:
+  - idea1(α=0.93): 17.27pp, SSIM=0.9584, 5/50 SSIM<0.92 violations
+  - adv_opt(ssim_floor=0.92): 2.69pp, SSIM=0.9801, α≈0.61 for ALL videos
+  - Finding: MSE proxy over-penalizes on YT-VOS at strict floor → optimizer artifact, not true constraint
+- Manuscript fully rewritten: abstract, discussion, conclusion all updated
+- SSIM soft constraint explicitly documented
+
+### Reviewer Raw Response
+
+<details>
+<summary>Click to expand full reviewer response</summary>
+
+**Score**: 7.1/10
+**Verdict**: Almost
+
+Findings:
+1. Biggest remaining problem is claim mismatch on YT-VOS. YT-VOS evidence under ssim_floor=0.90 does not directly compare to fixed-vs-opt under same protocol. Convergence to alpha≈0.93 is supportive, but not a matched paired comparison.
+2. The 0.92 result exposes real fragility in the method. Not the operating-point story itself, but weakens "generally reliable constrained optimizer" claim. Stronger as "discovers good operating point under paper's soft-constraint regime."
+3. Proxy validation still incomplete on YT-VOS — asymmetric: validated where it works, not where it fails.
+4. Paper is now much more honest — rewrite sounds materially better. Utility drop disclosed, soft-constraint explicit, discovery separated from deployment. Right direction.
+5. Practical scope narrow. XMem much smaller than SAM2, YOLO recall drops hard. Should be sold as SAM2-targeted privacy preprocessing study.
+
+**YT-VOS Framing**: Do not omit ssim_floor=0.92 result; frame as "failure-mode ablation" showing surrogate brittleness, not direct evidence against operating point existence.
+
+**Minimum Fix**: Run fixed(α=0.93) vs adv_opt on same YT-VOS n=50 under ssim_floor=0.90. This would likely push to 7.6-7.8/10 → Ready.
+
+</details>
+
+### Actions Taken (Phase C Round 4)
+1. Launched `ytvos_fair_fixed_n50` (GPU 5, screen ytvos_fair): idea1(α=0.93) vs adv_opt, ssim_floor=0.90, n=50 YT-VOS
+   - This is the "minimum fix" experiment; expected to show adv_opt converging to α≈0.93 matching idea1
+2. Round 4 is MAX_ROUNDS — loop terminates; experiment continues independently
+
+### Final Status — LOOP 2 COMPLETE (MAX_ROUNDS=4)
+
+**Score progression (2nd loop)**: 6.6 → 7.1 → 7.2 → **7.1/10** (terminal, slight regression due to honest ssim artifact)
+
+**One experiment to reach Ready (7.6-7.8/10)**:
+- `ytvos_fair_fixed_n50` (running): idea1(α=0.93) vs adv_opt(ssim_floor=0.90) on 50 YT-VOS videos
+- Expected: adv_opt converges to α≈0.93, paired gain ≈ 0 (equivalence), confirming operating point on YT-VOS
+
+**Remaining manuscript notes**:
+- conclusion.tex already mentions 88% convergence (consistent with ssim_floor=0.90 finding)
+- Once ytvos_fair completes, update abstract/conclusion with paired gain ≈ 0 on YT-VOS
+- Frame ssim_floor=0.92 result in Limitations as surrogate brittleness evidence
+
+---
+
+---
+
+# New Auto-Review Loop — 2026-04-08 (Loop 3: Full evidence + manuscript)
+**Goal**: Present n=497 YT-VOS + manuscript rewrites; fix YT-VOS fair JF comparison (codec bug)
+**MAX_ROUNDS**: 4
+**Prior loop score**: 7.1/10 (Loop 2, status=completed)
+**New threadId**: 019d6b07-dffc-7243-8a59-74eafaeb15fe
+
+## Round 1 (2026-04-08)
+
+### Assessment (Summary)
+- **AAAI Score**: 7.8/10 — new highest!
+- **Verdict**: Almost
+- **Key finding**: n=497 YT-VOS sweep resolves generalization concern "mostly yes"; fair JF comparison still critical blocker
+
+### Key Progress Since Last Loop
+- YT-VOS full sweep COMPLETED: n=497, idea1=7.4pp, adv=16.5pp, gain=+9.2pp, **91.9% win-rate**
+- YT-VOS alpha convergence (ssim_floor=0.90, n=50): 94% at α≈0.93 confirmed
+- BUT: YT-VOS fair JF comparison (codec evaluation) still NaN (codec_round_trip failed — ffmpeg not in PATH)
+- Paper manuscript: abstract, discussion, conclusion previously rewritten
+
+### Reviewer Raw Response
+
+<details>
+<summary>Click to expand full reviewer response</summary>
+
+**Score**: 7.8/10 — Verdict: Almost
+
+**Remaining Blockers**:
+1. Critical: YT-VOS codec-roundtrip JF comparison at matched quality still missing. n=497 proves cross-dataset gain over α=0.80 baseline, not the stronger "universal operating point" claim. Alpha convergence is strong indirect evidence, not outcome evidence. Minimum fix: run n=50 YT-VOS fair comparison at ssim_floor=0.90 and report paired ΔJF, win-rate, violation rate.
+2. High: Proxy validation DAVIS-only. Minimum fix: small YT-VOS proxy check (within-video correlation, 30-50 videos), or narrow claim to "validated on DAVIS, transferred elsewhere."
+3. High: Contribution identity vulnerable — "if global-fixed ≈ AdvOpt, what's the contribution?" Must frame explicitly: AdvOpt is offline discovery/calibration tool → deployable global point.
+4. Medium-High: "constrained" overstated → "soft surrogate-constrained" everywhere. Keep violation rates in main results.
+5. Medium: Baseline narrow (only vs α=0.80); utility sample small (n=20, one detector).
+6. Medium: Sample accounting unclear — protocol table needed.
+
+**Direct Answers**:
+- n=497 resolves generalization: "Mostly yes" for weak claim, "Not fully" for universal-point claim.
+- Fair JF comparison still a blocker for claims 2 and 3.
+- Score: 7.8/10.
+
+</details>
+
+### Actions Taken (Phase C Round 1)
+1. **Re-launched ytvos_fair_v2** (GPU 4, screen ytvos_fair_v2): fixed ffmpeg path bug (was using "ffmpeg" in PATH; now uses explicit conda env path). idea1(α=0.93) vs adv_opt(ssim_floor=0.90), n=50.
+2. **Rewrote introduction.tex**: complete rewrite for AdvOpt paper with proper contribution bullets; AdvOpt framed as "offline calibration tool → deployable global point."
+3. **Fixed abstract.tex**: "soft surrogate-constrained," added "offline calibration tool" framing.
+4. **Fixed discussion.tex**: renamed SSIM section to "Soft Surrogate Constraint," added Protocol Accounting Table (Table 1), documented ssim_floor brittleness.
+5. **Fixed conclusion.tex**: added "offline calibration tool" framing.
+6. Committed and pushed all changes (commit de501ee).
+
+### Status
+- Continuing to Round 2 after ytvos_fair_v2 completes
+
+---
+
 ## Strategy Review (2026-04-06, via GPT-5.4 xhigh)
 
 **Questions**: idea1/combo 地位？是否跑 YT-VOS adv_opt？下一步实验？
@@ -258,4 +516,68 @@ AdvOpt materially changes the picture. The oracle-gap result (98% proxy-oracle m
 3. **[中] C: Mask robustness with adv_opt**
    - 解释 YT-VOS gap 的机制：瓶颈是掩膜/内容质量，不是超参
 4. **[低] A: adv_opt on YT-VOS** — 当前最低优先级
+
+---
+
+## Round 2 (2026-04-08) — LOOP 3 FINAL
+
+### Assessment (Summary)
+- **Score**: 8.0/10
+- **Verdict**: Ready after minor revisions
+- **Key finding**: YT-VOS fair comparison closes main empirical blocker; AdvOpt story confirmed as offline calibration tool; manuscript method section added
+
+### Key Progress Since Round 1
+- **ytvos_fair_v4 COMPLETED** (n=50 YT-VOS, H.264 CRF=23):
+  - idea1(α=0.93): 17.27pp | AdvOpt(ssim_floor=0.90): 16.45pp
+  - Paired gain: −0.82pp, t=−2.08, n=50
+  - **94% of gains within ±5pp** (near-equivalence for vast majority)
+  - 88% of AdvOpt videos: alpha>0.92 (converges to universal point)
+  - 12% surrogate brittleness: 6/50 backed-off videos (adv_alpha as low as 0.335), all with idea1 SSIM≥0.96
+  - Both methods: identical SSIM violation rate (3/50 = 6%)
+- **manuscript method.tex ADDED**: BRS definition (Eq.1), AdvOpt objective, Algorithm 1 box, evaluation protocol
+- **main.tex**: corrected title + method section included + old attack sections commented out
+- **abstract.tex**: fair comparison result + global-fixed deployment recommendation
+- **discussion.tex**: protocol table updated (fair comparison row added) + operating-point section rewritten with honest surrogate brittleness analysis
+
+### Reviewer Raw Response
+
+<details>
+<summary>Click to expand full reviewer response</summary>
+
+**Score**: 8.0/10
+
+**Verdict**: `Ready after minor revisions` on the science. The new YT-VOS fair comparison closes the main empirical blocker from the last round. It also settles the correct story: AdvOpt is not the best deployment policy; it is an offline calibration/discovery procedure that finds the global-fixed operating point. If you submit with that framing, this is now in the accept-range for an AAAI-level review. If the manuscript still truly lacks a proper method section, then the paper package is still practically `Almost`.
+
+**Remaining Critical Weaknesses**:
+1. The contribution framing is still fragile. On the fairest YT-VOS comparison, AdvOpt is slightly worse than fixed α=0.93, so any wording that presents AdvOpt as the deployed method will get attacked. Minimum fix: make global-fixed BRS at (r=24, alpha=0.93) the deployment recommendation everywhere, and describe AdvOpt as the offline calibration tool that discovered it.
+2. The manuscript structure sounds incomplete. A top-tier reviewer will not forgive "old sections commented out" plus "new methodology section not yet written." Minimum fix: add a real Method section with BRS definition, AdvOpt objective, first-frame-only protocol, codec pipeline, and one clean algorithm box or pseudocode block.
+3. Sample accounting still needs to be airtight. Minimum fix: add a single evaluation-accounting table that explains exactly what each subset is, why it differs, and whether failures/exclusions occurred.
+4. The proxy claim is now narrower than the title-level emphasis suggests. It is strong on DAVIS, but YT-VOS shows a real 12% brittle regime. Minimum fix: explicitly say "proxy-validated on DAVIS; observed brittle on 12% of YT-VOS cases," and do not imply broader proxy validity than you measured.
+5. Utility evidence is still relatively thin. Minimum fix: if you have time, enlarge the utility set or add one more detector/metric; if not, keep utility claims modest.
+
+**Bottom Line**: Yes, these findings are sufficient to move the work to about 8/10. The main remaining risk is no longer missing experiments; it is whether the paper is written to match the evidence you now have.
+
+</details>
+
+### Actions Taken (Phase C Round 2)
+1. **ytvos_fair_v4**: completed (n=50), results incorporated into discussion.tex and abstract.tex
+2. **paper/sections/method.tex**: NEW — BRS definition, AdvOpt algorithm box, codec pipeline, evaluation protocol
+3. **paper/main.tex**: updated title, included method.tex, commented out old attack sections
+4. **paper/sections/abstract.tex**: added fair comparison result (−0.82pp, 94% within ±5pp) + global-fixed deployment recommendation
+5. **paper/sections/discussion.tex**: added fair comparison row to protocol table; rewrote operating-point section with surrogate brittleness analysis
+6. Committed all changes (commit e4ece51)
+
+### Final Status — LOOP 3 COMPLETE (score ≥ 8, "Ready after minor revisions")
+
+**Score progression (Loop 3)**: 7.8 → **8.0/10** ✓
+
+**Score progression (all loops)**: 5.8→6.3→6.7→6.9 | 6.6→7.1→7.2→7.1 | 7.8→**8.0** ✓
+
+**Remaining for full submission** (per reviewer):
+1. Ensure all sections frame AdvOpt as offline calibration tool (not deployed method)
+2. Expand or explicitly narrow utility claims (n=20, one detector)
+3. Write results/experiments section (currently inline in discussion)
+4. Compile full paper LaTeX and verify it builds correctly
+
+**Venue recommendation**: AAAI 2026 or TCSVT (May 2026) — science is submission-ready; manuscript needs final polish.
 
