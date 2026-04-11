@@ -4,51 +4,40 @@
 \subsection{SAM2 Video Architecture}
 \label{sec:sam2}
 
-SAM2~\citep{ravi2024sam2} processes video through a hierarchical image encoder (Hiera~\citep{ryali2023hiera}) producing multi-scale features at four stages with channel widths $[96, 192, 384, 768]$. An FPN neck produces 256-dim features at multiple spatial resolutions, with the finest level at $64 \times 64$ spatial tokens.
+SAM2~\citep{ravi2024sam2} processes video through a hierarchical image encoder (Hiera~\citep{ryali2023hiera}) producing multi-scale features with a 256-dim FPN neck.
+For video tracking, SAM2 maintains a \emph{streaming memory bank} of up to 7 past frames.
+At each frame, a memory encoder compresses the current prediction into spatial memory tokens ($8 \times 8$) and an object pointer ($\mathbb{R}^{256}$), which are written to the bank and used for cross-attention conditioning of future frames.
 
-For video tracking, SAM2 maintains a \emph{streaming memory bank} of up to 7 past frames. At each tracked frame, a memory encoder compresses the current prediction into:
-\begin{itemize}
-  \item \textbf{Maskmem features} $M_t \in \RR^{N_m \times 64}$ (flattened from $8 \times 8$ spatial tokens): the primary spatial memory written to the bank.
-  \item \textbf{Object pointer} $p_t \in \RR^{256}$: a compact object identity token extracted from the mask decoder's output.
-\end{itemize}
-
-At each subsequent frame, a \emph{memory attention} module applies cross-attention from current spatial tokens to the memory bank, conditioning the mask decoder on stored object history. Frame 0 seeds this entire state---its memory write determines the initial retrieval key used by all later frames.
-
-This architecture creates a natural attack surface: if the adversarial perturbation on frame 0 corrupts the written memory state $M_0$ or pointer $p_0$ in a way that persists after codec compression, downstream tracking should fail.
+This architecture is \emph{boundary-sensitive}: the mask decoder and memory encoder rely on sharp boundary features to maintain tracking across frames.
+Degrading these boundary features---particularly in a way that survives video compression---is the mechanism our method exploits.
 
 \subsection{H.264 Video Codec}
 \label{sec:codec}
 
-H.264 (libx264) applies lossy compression via block-based DCT followed by scalar quantization. At CRF 23 (the default for YouTube and most video distribution platforms), the quantization step size is calibrated to achieve 38--42 dB PSNR on natural video.
+H.264 (libx264) applies block-based DCT followed by scalar quantization.
+At CRF~23 (the default for YouTube and most distribution platforms), high-frequency spatial content is aggressively quantized.
+Critically, \textbf{DCT block boundaries tend to produce ringing artifacts when adjacent blocks have mismatched energy levels}: a low-entropy (flat) region next to a high-entropy (textured) region is hypothesised to trigger differential quantization across the block boundary, producing ringing on decode.
 
-The key property for adversarial robustness is that \textbf{DCT quantization removes high-frequency spatial content}. Adversarial perturbations constrained to $\|\delta\|_\infty \leq \varepsilon$ tend to concentrate in high-frequency patterns, since these minimize perceptual visibility (they are harder to see against textured backgrounds). At CRF 23, these high-frequency perturbation components are quantized to zero.
-
-This creates a fundamental tension: the perturbation budget ($\varepsilon = 8/255 \approx 3.1\%$ pixel value) is shared between the adversarial signal (which needs high-frequency structure for effectiveness) and the codec survival requirement (which demands low-frequency structure).
+This interaction is central to our method: BRS deliberately creates a low-entropy boundary strip adjacent to natural texture, which H.264 then amplifies into boundary-destructive artifacts.
 
 \subsection{Threat Model}
 \label{sec:threat}
 
-\paragraph{Setting.} A dataset publisher wants to prevent a third-party adversary from using SAM2 to automatically track subjects in published video. The publisher applies a preprocessor to each video before release; the video is then compressed with H.264 CRF23 during release; the adversary downloads the compressed video and runs SAM2 with a first-frame point prompt.
+\paragraph{Setting.}
+A dataset publisher wants to prevent third-party SAM2 tracking of annotated subjects.
+The publisher has access to ground-truth segmentation masks (standard in annotated datasets like DAVIS and YT-VOS) and applies preprocessing before release.
+The video is then compressed with H.264 CRF=23 during distribution; the adversary downloads the compressed video and runs SAM2.
 
-\paragraph{Constraints on the preprocessor.}
-\begin{itemize}
-  \item $L_\infty$ pixel budget: $\|\delta\|_\infty \leq \varepsilon = 8/255$
-  \item SSIM $\geq 0.90$ (structural similarity preserved)
-  \item LPIPS $\leq 0.10$ (perceptual distance bounded)
-\end{itemize}
+\paragraph{Key distinction from adversarial attacks.}
+This is \emph{not} a universal adversarial perturbation setting (cf.\ UAP-SAM2~\citep{uap_sam2_2025}, DarkSAM~\citep{darksam2024}).
+Those methods use bounded additive perturbations without content knowledge.
+Our setting is \emph{mask-conditioned publisher-side editing}: the publisher knows the object boundaries and can make structural content changes, not just additive noise.
+This is a strictly different (and stronger) information assumption, and results should not be directly compared across settings.
 
-\paragraph{Success criterion.} We define tracking degradation as:
-\begin{align}
-  \djf &= \text{JF}_\text{clean} - \text{JF}_\text{measured}
-\end{align}
-where JF is the standard DAVIS J\&F metric (region similarity + boundary accuracy), ranging from 0 (no tracking) to 1 (perfect). \textbf{Sign convention:} $\djf > 0$ means the measured JF is lower than clean---i.e., the attack degrades tracking (larger is better for the attacker). A \emph{valid} video requires $\text{JF}_\text{clean} \geq 0.5$. Note: this filter selects videos where SAM2 tracks well without perturbation; results on easier videos may differ.
+\paragraph{Quality constraints.}
+We require $\mathrm{SSIM} \geq 0.90$ and $\mathrm{LPIPS} \leq 0.10$ (post-codec), enforced as soft constraints during parameter selection and verified empirically.
 
-The primary metric is:
-\begin{align}
-  \djfauc &= \text{JF}_\text{clean-codec} - \text{JF}_\text{adv-codec}
-\end{align}
-where ``clean-codec'' = clean frames encoded with H.264 CRF23 and decoded, ``adv-codec'' = adversarial frames encoded with H.264 CRF23 and decoded. This metric isolates attack damage from the codec's own effect on tracking. $\djfauc > 0$ means the adversarial video tracks worse than the clean codec baseline---a positive value indicates successful attack survival through the codec.
-
-The \textbf{proceed threshold} is $\djfauc \geq 0.05$; the \textbf{kill threshold} is $\djfauc < 0.03$.
-
-\paragraph{Evaluation.} All results use DAVIS 2017 validation set (9 videos with $\text{JF}_\text{clean} \geq 0.5$), official \texttt{SAM2VideoPredictor} with first-frame GT centroid point prompt, and real FFmpeg H.264 encode/decode at CRF 23.
+\paragraph{Evaluation metric.}
+$\Delta\mathrm{JF}_\mathrm{codec} = \mathrm{JF}_\mathrm{codec\text{-}clean} - \mathrm{JF}_\mathrm{codec\text{-}adv}$, where both terms are computed on H.264-compressed video.
+This isolates attack effectiveness from codec-induced degradation on clean video.
+Larger $\Delta\mathrm{JF}_\mathrm{codec}$ means more tracking degradation (better privacy).

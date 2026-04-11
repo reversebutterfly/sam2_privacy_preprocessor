@@ -1,40 +1,32 @@
 {
-  "round": 2,
-  "loop": 3,
-  "threadId": "019d6b07-dffc-7243-8a59-74eafaeb15fe",
-  "status": "completed",
-  "last_score": 8.0,
-  "last_verdict": "Ready after minor revisions — science sufficient for AAAI; manuscript polish needed",
-  "score_progression_loop3": [7.8, 8.0],
-  "score_progression_loop2": [6.6, 7.1, 7.2, 7.1],
-  "score_progression_loop1": [5.8, 6.3, 6.7, 6.9],
-  "ytvos_fair_v4_results": {
-    "n": 50,
-    "idea1_mean_pp": 17.27,
-    "adv_mean_pp": 16.45,
-    "paired_gain_pp": -0.82,
-    "t_stat": -2.08,
-    "win_rate": "15/50 = 30%",
-    "gains_within_5pp": "47/50 = 94%",
-    "alpha_above_0_92": "44/50 = 88%",
-    "alpha_mean": 0.906,
-    "idea1_ssim_violations": "3/50 = 6%",
-    "adv_ssim_violations": "3/50 = 6%",
-    "surrogate_brittle_videos": 6
+  "round": 1,
+  "loop": 9,
+  "threadId": "019d7794-adb2-7503-8d56-0dd3eb6517b5",
+  "status": "in_progress",
+  "topic": "Find optimization direction: operator choice + directional allocation",
+  "last_score": null,
+  "last_verdict": null,
+  "gpt54_direction": {
+    "core_insight": "Paper should be about TWO orthogonal axes: operator choice AND budget allocation. Not BRS supremacy.",
+    "key_missing_experiment": "aniso_pixel — decides if paper is 'allocation paper' or 'scoped BRS paper'",
+    "top3_experiments_8gpuh": [
+      "1. oracle_aniso_pixel (highest info gain)",
+      "2. Expand matched-quality baselines to more videos",
+      "3. Bug-fixed predictor revalidation (frozen, one shot)"
+    ],
+    "best_title": "Operator Choice and Directional Allocation in Fixed-Budget Privacy Preprocessing for SAM2 Video Tracking",
+    "score_estimate": "6.0-6.5 now; 7.0-7.4 with aniso_pixel + larger baselines + predictor revalidation",
+    "stop_investing_in": "defending BRS as the best operator"
   },
-  "actions_taken_round2": [
-    "ytvos_fair_v4 completed: n=50, gain=-0.82pp, t=-2.08, 94% within ±5pp",
-    "paper/sections/method.tex: NEW — BRS definition, AdvOpt objective, Algorithm 1, eval protocol",
-    "paper/main.tex: correct title + method.tex included + old attack sections commented out",
-    "paper/sections/abstract.tex: fair comparison result + global-fixed deployment recommendation",
-    "paper/sections/discussion.tex: protocol table updated + operating-point section rewritten",
-    "Committed all changes (commit e4ece51)"
-  ],
-  "remaining_for_submission": [
-    "Ensure all sections frame AdvOpt as offline calibration (not deployed method)",
-    "Write results/experiments section (currently inline in discussion)",
-    "Expand or explicitly narrow utility claims (n=20 DAVIS, one YOLO detector)",
-    "Compile LaTeX and verify paper builds cleanly"
-  ],
-  "timestamp": "2026-04-08T13:30:00"
+  "latest_data": {
+    "baselines_v4_lpips": {
+      "pixelation": "+64.4pp SSIM=0.930 LPIPS=0.096",
+      "brs": "+38.4pp SSIM=0.936 LPIPS=0.084",
+      "inpainting": "+43.2pp SSIM=0.929 LPIPS=0.095",
+      "morph_fill": "+42.4pp SSIM=0.957 LPIPS=0.061"
+    },
+    "oracle_gap_fixed": "+31.1pp, 16/16 wins, strict iso-budget",
+    "final_brs_point": "77/90 done, mean=46.5pp"
+  },
+  "timestamp": "2026-04-10T18:00:00"
 }

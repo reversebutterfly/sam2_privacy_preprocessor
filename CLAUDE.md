@@ -51,6 +51,12 @@ This project implements a SAM2 privacy preprocessor.
   - multi-experiment parallelism
 - Recommend max_parallel_runs explicitly after profiling
 
+## Git Workflow
+- **每次编写新代码前，必须先将当前代码同步到 git 仓库**（git add + git commit）
+- Commit message 用英文，简要描述当前状态
+- 确保工作区干净后再开始新的代码修改
+- 不要在有未提交更改的情况下开始写新功能
+
 ## Implementation Rules
 - Read IDEA_SUMMARY.md and refine-logs/EXPERIMENT_PLAN.md before changing code
 - Modify the current scaffold instead of rebuilding a new framework

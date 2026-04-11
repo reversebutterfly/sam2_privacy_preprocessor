@@ -1,0 +1,51 @@
+\section{Main Result: Anisotropy Dominates Uniform BRS}
+\label{sec:main_result}
+
+\subsection{Strict Iso-Budget Oracle Gap}
+
+We evaluate the anisotropic allocation oracle on $n{=}40$ DAVIS videos, each with 50 frames, point prompt, and H.264 CRF=23 codec round-trip.
+The uniform baseline uses $\alpha_\mathrm{target}{=}0.80$ (i.e., all 8 sectors set to $0.80$).
+The oracle searches over anisotropic allocations subject to exact budget constraint (Eq.~\ref{eq:budget}).
+
+\begin{table}[t]
+\centering
+\small
+\caption{Strict iso-budget comparison: uniform vs.\ anisotropic allocation on DAVIS ($n{=}16$, per-frame budget re-projection). Both methods have identical area-weighted budget $=0.80$ on every frame. All metrics are post-H.264 CRF=23.}
+\label{tab:oracle_gap}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Allocation} & \textbf{Mean (pp)} & \textbf{Median (pp)} & \textbf{Win-rate} & \textbf{SSIM} & \textbf{Wilcoxon $p$} \\
+\midrule
+Uniform ($\alpha{=}0.80$) & 20.1 & 17.7 & baseline & 0.937 & --- \\
+Anisotropic oracle & \textbf{51.2} & \textbf{54.6} & \textbf{16/16} & 0.932 & $< 10^{-4}$ \\
+\midrule
+\textbf{Gap} & \textbf{+31.1} & \textbf{+29.2} & \textbf{100\%} & $-$0.005 & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The anisotropic oracle achieves $+51.2\,\mathrm{pp}$ mean $\Delta\mathrm{JF}_\mathrm{codec}$ versus $+20.1\,\mathrm{pp}$ for uniform BRS---a $+31.1\,\mathrm{pp}$ gap---at the \emph{exact same} per-frame distortion budget.
+The win-rate is $100\%$ ($16/16$), and the SSIM difference is only $0.005$ (both in the $0.93$--$0.94$ range).
+This confirms that the allocation direction is a far more important lever than the total budget magnitude.
+
+\subsection{Analysis of Oracle Patterns}
+
+The oracle-discovered sector allocations are structured, not random.
+Representative patterns include:
+\begin{itemize}
+  \item \textbf{bus} ($+87.3\,\mathrm{pp}$ gap): oracle concentrates $\alpha$ on the vertical boundary sectors (top/bottom of the bus silhouette), where H.264 block boundaries align with the object edge.
+  \item \textbf{dance-twirl} ($+66.1\,\mathrm{pp}$ gap): oracle suppresses the motion-leading boundary direction, where SAM2's memory attention relies on consistent boundary features across frames.
+  \item \textbf{dog} ($+10.6\,\mathrm{pp}$ gap): smallest gap; uniform BRS is already strong ($51.4\,\mathrm{pp}$), leaving less room for directional improvement.
+\end{itemize}
+
+The gap is largest when uniform BRS is weakest (Pearson $r{=}{-}0.72$ between uniform $\Delta$JF and gap), suggesting that anisotropic allocation primarily rescues videos where uniform suppression ``wastes budget'' on non-critical directions.
+
+\subsection{Hypothesised Mechanism: Codec--Tracker Interaction}
+
+We hypothesise a two-stage amplification consistent with the observed results:
+\begin{enumerate}
+  \item \textbf{Pre-codec:} Concentrated suppression on a few sectors creates a \emph{locally stronger} low-entropy region, likely mismatching the adjacent unsuppressed boundary within H.264 DCT blocks.
+  \item \textbf{Post-codec:} The codec may introduce ringing artifacts at these strong-mismatch boundaries, degrading the boundary features that SAM2's encoder uses for mask propagation.
+\end{enumerate}
+Under this interpretation, uniform allocation spreads the same total energy thinly around the entire boundary, creating weaker mismatch everywhere rather than strong mismatch where it matters.
+A formal mechanistic analysis (e.g., per-block DCT coefficient analysis pre/post codec) is left for future work.

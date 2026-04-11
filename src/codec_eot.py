@@ -194,6 +194,9 @@ def encode_decode_hevc(
                 break
             decoded.append(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
             idx += 1
+
+    if len(decoded) != len(frames):
+        print(f"  [warn] HEVC codec frame count mismatch: input={len(frames)}, decoded={len(decoded)}")
     return decoded
 
 
@@ -264,6 +267,8 @@ def encode_decode_h264(
             decoded.append(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
             idx += 1
 
+    if len(decoded) != len(frames):
+        print(f"  [warn] H.264 codec frame count mismatch: input={len(frames)}, decoded={len(decoded)}")
     return decoded
 
 

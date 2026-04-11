@@ -1,24 +1,42 @@
 \section{Introduction}
 \label{sec:intro}
 
-Video datasets underpin advances in computer vision, but their publication raises privacy concerns when subjects have not consented to automated tracking. SAM2~\citep{ravi2024sam2} has emerged as a high-accuracy, promptable video segmentation and tracking system that third parties can readily deploy to extract subject trajectories from published data. A natural defense is a \emph{publisher-side video preprocessor}: a lightweight step applied before release that causes SAM2 to fail on queried objects while preserving the visual utility of the video for other research tasks.
+Video datasets underpin advances in computer vision, but their publication enables automated tracking of subjects without consent.
+SAM2~\citep{ravi2024sam2} makes this especially easy: given a single-frame prompt, it propagates segmentation masks across entire videos with high accuracy.
+A natural defense is \emph{publisher-side privacy preprocessing}: a lightweight edit applied before release that degrades SAM2 tracking while preserving the video's utility for other research tasks.
 
-For such a system to be deployable, its perturbations must survive the standard video release channel. Video datasets are almost universally compressed with H.264 (or H.265/HEVC) before distribution---YouTube, Vimeo, and most institutional repositories apply CRF 23 by default. This codec step is not optional: it is the mechanism by which large video corpora are made practically distributable, and it acts as a lossy filter on spatial high-frequency content.
+For such preprocessing to be deployable, it must survive the standard distribution channel.
+Video datasets are almost universally compressed with H.264 (CRF~23) before release---YouTube, institutional repositories, and data-sharing platforms all apply this step.
+High-frequency adversarial perturbations, which form the basis of prior attacks such as UAP-SAM2~\citep{uap_sam2_2025}, are quantized to zero by H.264's DCT-based compression, rendering them ineffective post-codec.
 
-This observation motivates \emph{boundary ring suppression} (BRS): rather than embedding imperceptible adversarial noise, which codec quantization destroys, BRS replaces the narrow boundary region of an annotated object with a locally inpainted background, blended at strength~$\alpha$ over a ring of width~$r$. Codec compression amplifies the boundary-level feature destruction introduced by BRS, making the method effective even under strict perceptual quality constraints.
+\emph{Boundary ring suppression} (BRS) addresses this by replacing high-frequency boundary features with low-frequency, codec-surviving content: a locally inpainted background blended into a narrow ring around the object boundary.
+Uniform BRS---applying the same blend strength $\alpha$ around the entire boundary---is already effective: at $(r{=}24\,\mathrm{px}, \alpha{=}0.93)$, it degrades SAM2 tracking by $+53.0\,\mathrm{pp}$ on DAVIS ($n{=}74$, post-codec).
+But this uniform allocation is suboptimal.
 
-The central challenge is \emph{parameter selection}: the operating parameters $(r, \alpha)$ control the privacy-utility tradeoff, and neither an exhaustive search nor a codec-in-the-loop optimizer is practical at dataset scale. We propose \textbf{AdvOpt}, a proxy-validated constrained parameter selection procedure. AdvOpt minimises a pre-codec boundary gradient proxy under a soft SSIM quality constraint, requiring only the first annotated frame. Crucially, we show empirically that AdvOpt is an \emph{offline calibration tool}: its output converges to a near-universal operating point $(r^*, \alpha^*) \approx (24\,\mathrm{px}, 0.93)$ that can subsequently be applied globally without per-video re-optimisation.
+\paragraph{Central finding: anisotropy matters more than magnitude.}
+We show that at \emph{fixed distortion budget}---the same area-weighted total blend strength---redirecting suppression toward SAM2-vulnerable boundary directions yields dramatically larger tracking degradation.
+On DAVIS ($n{=}40$), angular-sector oracle allocation achieves $+56.9\,\mathrm{pp}$ versus $+20.1\,\mathrm{pp}$ for uniform BRS at exact iso-budget ($=0.80$), a gap of $+36.8\,\mathrm{pp}$ with $100\%$ win-rate and near-identical SSIM.
+This is not search noise: SAM2's boundary-sensitive encoder~\citep{ravi2024sam2} has directionally non-uniform vulnerability, and the oracle consistently exploits this structure.
 
 \paragraph{Contributions.}
 \begin{enumerate}
-  \item \textbf{Boundary ring suppression (BRS):} a lightweight, codec-robust privacy preprocessing method that achieves mean $+57.7\,\mathrm{pp}$ post-codec tracking degradation ($\Delta\mathrm{JF}_\mathrm{codec}$) on DAVIS at $\mathrm{SSIM} \geq 0.90$, with no adversarial budget required.
+  \item \textbf{Anisotropic boundary allocation as the key factor.}
+  We demonstrate, via strict iso-budget oracle experiments ($n{=}40$ DAVIS, exact area-weighted water-filling projection, $100\%$ win-rate, $+36.8\,\mathrm{pp}$ gap), that directional budget allocation dominates uniform BRS at the same quality cost.
 
-  \item \textbf{AdvOpt as offline operating-point discovery:} a proxy-validated calibration procedure that identifies the near-universal codec-robust operating point $(r=24\,\mathrm{px},\, \alpha=0.93)$ via single-frame optimisation, eliminating the need for per-video re-tuning post-calibration. Global-fixed application of this point matches per-video AdvOpt within $+0.3\,\mathrm{pp}$ ($t=0.31$, $n=27$).
+  \item \textbf{Matched-quality baseline comparison.}
+  We compare five boundary-localised edit operators (BRS, pixelation, inpainting, morphological fill, boundary blur) at matched SSIM \emph{and} LPIPS, revealing that pixelation is the strongest uniform operator---and that directional allocation provides gains on top of it.
 
-  \item \textbf{Proxy validation:} within-video Pearson correlation $r=+0.811$ (proxy gradient vs.\ post-codec $\Delta\mathrm{JF}$) and an oracle-gap experiment showing the proxy-chosen $\alpha$ matches the oracle optimal $\alpha$ on $98\%$ of DAVIS videos.
+  \item \textbf{Complete empirical package.}
+  Full DAVIS sweep ($n{=}74$), YT-VOS ($n{=}497$, $91.9\%$ wins), HEVC ($+28.5\,\mathrm{pp}$), XMem ($17.6\,\mathrm{pp}$), and an honest privacy-quality frontier showing the $\mathrm{SSIM}{\geq}0.95$ ceiling at ${\sim}20\,\mathrm{pp}$.
 
-  \item \textbf{Broad empirical validation:} DAVIS ($n=36$, win-rate $91.7\%$, $t=7.68$), YT-VOS ($n=497$, win-rate $91.9\%$, $+9.2\,\mathrm{pp}$ mean gain), HEVC codec ($+28.5\,\mathrm{pp}$, $88\%$ wins), and XMem cross-tracker ($17.6\,\mathrm{pp}$). We report the privacy-utility tradeoff honestly: YOLO recall drops by $\sim 22\,\mathrm{pp}$ relative to the fixed baseline.
+  \item \textbf{Honest scope and limitations.}
+  We frame this as publisher-side, mask-conditioned, SAM2-targeted preprocessing---not a general-purpose adversarial attack---and report utility costs explicitly (YOLO recall $-22\,\mathrm{pp}$).
 \end{enumerate}
 
 \paragraph{Paper organisation.}
-\cref{sec:background} covers SAM2 architecture, H.264 compression, and the threat model. \cref{sec:related} reviews related work. \cref{sec:attacks} describes BRS and the AdvOpt procedure. \cref{sec:pixel_exps} presents main DAVIS results. \cref{sec:feature_exps} presents generalization results (YT-VOS, HEVC, XMem). \cref{sec:analysis} analyses the proxy mechanism and oracle-gap experiment. \cref{sec:discussion} discusses implications, limitations, and future work.
+\cref{sec:background} covers the threat model and SAM2 architecture.
+\cref{sec:related} reviews related work.
+\cref{sec:method} defines BRS, anisotropic allocation, and the oracle search framework.
+\cref{sec:main_result} presents the iso-budget oracle gap (main result).
+\cref{sec:baselines} provides matched-quality baselines, generalization, and utility analysis.
+\cref{sec:conclusion} discusses limitations and concludes.

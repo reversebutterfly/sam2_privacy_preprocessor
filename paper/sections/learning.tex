@@ -1,0 +1,52 @@
+\section{Learning the Allocation with Abstention}
+\label{sec:learning}
+
+The oracle search requires per-video codec round-trip and SAM2 inference---infeasible at dataset scale.
+We ask: \emph{can a lightweight predictor learn to approximate the oracle allocation from first-frame features alone?}
+
+\subsection{Experimental Setup}
+
+We train the two-stage predictor (\cref{subsec:predictor}) on oracle-labelled DAVIS videos.
+Training uses MSE loss on projected sector alphas plus BCE gate loss ($\lambda{=}0.5$), 300 epochs of Adam ($\mathrm{lr}{=}10^{-3}$).
+Evaluation is real H.264 + SAM2 inference on \emph{held-out} videos (never seen during training).
+
+\paragraph{Cross-validation protocol.}
+We use 5-fold random CV on $n{=}28$ oracle-labelled videos (22 train / 6 test per split), with fresh model training per split.
+This is a conservative evaluation: the predictor must generalise to unseen video content, object categories, and motion patterns.
+
+\subsection{Results}
+
+\begin{table}[t]
+\centering
+\small
+\caption{Learned predictor vs.\ uniform BRS (5-fold CV, $n{=}28$, 30 held-out evaluations total). ``Closure'' $= (\text{learned} - \text{BRS}) / (\text{oracle} - \text{BRS})$.}
+\label{tab:predictor}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Metric} & \textbf{One-stage} & \textbf{Two-stage (gate)} & \textbf{$\Delta$} \\
+\midrule
+Win-rate vs.\ uniform    & 83\%  & \textbf{90\%}  & $+7$ \\
+Mean gain (pp)           & 14.9  & \textbf{17.6}  & $+2.7$ \\
+Mean closure ($|$gap$|{>}5$pp) & 26.4\% & \textbf{31.4\%} & $+5.0$ \\
+Negative losses          & 5/30  & \textbf{3/30}  & $-2$ \\
+Min split win-rate       & 66.7\% & \textbf{83.3\%} & $+16.6$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The two-stage predictor achieves $90\%$ win-rate over uniform BRS with $+17.6\,\mathrm{pp}$ mean gain.
+The gate reduces catastrophic losses from 5 to 3 out of 30 evaluations, and lifts the worst-split win-rate from $66.7\%$ to $83.3\%$.
+Mean closure (the fraction of the oracle gap recovered) is $31.4\%$ for videos with meaningful gap ($|$gap$|{>}5\,\mathrm{pp}$).
+
+\paragraph{Interpretation.}
+The predictor learns a real signal---not random search noise---as evidenced by consistent ${\geq}83\%$ win-rate across all 5 random splits.
+However, $31\%$ closure with $n{=}22$ training videos and 60-dim hand-crafted features is a proof of concept, not a ceiling.
+The gate mechanism is crucial: without it, the predictor occasionally produces allocations worse than uniform BRS on out-of-distribution videos (e.g., unusual object shapes or very small masks).
+With the gate, the predictor substantially reduces---but does not eliminate---the risk of underperforming uniform BRS.
+
+\subsection{Failure Modes}
+
+Three videos consistently resist learned allocation across splits:
+\textbf{bear} (closure $-13\%$), \textbf{elephant} ($-64\%$), and \textbf{kite-surf} ($-75\%$).
+These share a pattern: either the oracle gap is small (uniform BRS already strong, little room for improvement) or the optimal sector pattern requires directional features not captured by first-frame statistics alone (e.g., future motion trajectory).
+The gate catches most such cases but not all---future work should incorporate temporal features or SAM2 encoder representations.

@@ -62,8 +62,21 @@ The surrogate brittleness is documented in our ssim\_floor ablation (Section~\re
 The correct operating regime is ssim\_floor $\in [0.88, 0.90]$, where the surrogate provides reliable guidance.
 Future work should replace the MSE-SSIM surrogate with the true SSIM gradient or a learned quality predictor.
 
-\subsection{Privacy-Utility Tradeoff}
+\subsection{Privacy-Quality Tradeoff Frontier}
 
+\paragraph{Quality at the main operating point.}
+AdvOpt at $(r{=}24,\alpha{=}0.93)$ achieves $\mathrm{SSIM}{=}0.928$ and $\mathrm{LPIPS}{=}0.096$ on the utility subset ($n{=}20$ DAVIS videos).
+LPIPS $= 0.096$ indicates low perceptual distance~\cite{zhang2018lpips}; while a formal user study is beyond the scope of this work, this is consistent with mild, bounded quality impact relative to the privacy gain ($+57.7\,\mathrm{pp}$).
+We do not claim visual imperceptibility; the appropriate characterisation is \emph{quality-constrained privacy protection} with a bounded, explicit distortion budget.
+
+\paragraph{Privacy-quality frontier.}
+To characterise the inherent tradeoff, we sweep ring width $r \in \{6,8,10,12,14,16,20\}$ (px) with matched $\alpha$ on 8 DAVIS videos ($n=8$ per point).
+Results reveal a monotone frontier: under $\mathrm{SSIM}{\geq}0.95$, the attack ceiling is approximately $20\,\mathrm{pp}$ (achieved at $r{=}16, \alpha{=}0.85$, $\mathrm{SSIM}{=}0.952$).
+Crossing the $\mathrm{SSIM}{=}0.90$ threshold unlocks up to $57\,\mathrm{pp}$ at $(r{=}24, \alpha{=}0.93)$.
+This frontier is a property of ring-based suppression itself, not an artifact of AdvOpt's optimisation.
+AdvOpt's role is to navigate this frontier efficiently under a specified quality floor, rather than to overcome the fundamental tradeoff.
+
+\paragraph{Privacy-utility tradeoff.}
 AdvOpt achieves stronger privacy ($+57.7\,\mathrm{pp}$, SSIM $\approx 0.928$) than the fixed baseline ($+24.7\,\mathrm{pp}$, SSIM $\approx 0.953$) at a measurable downstream cost: YOLO detection recall drops from $77.5\%$ (baseline) to $55.2\%$ (AdvOpt).
 This is a deliberate privacy-utility tradeoff, not a side effect.
 The appropriate use case is a dataset publisher who prioritises strong, codec-robust privacy guarantees and can accept reduced downstream utility for third-party annotators.

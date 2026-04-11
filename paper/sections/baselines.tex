@@ -1,0 +1,94 @@
+\section{Baselines, Generalization, and Utility}
+\label{sec:baselines}
+
+\subsection{Uniform BRS: Full DAVIS Sweep}
+
+We first establish the strength of uniform BRS itself on the full DAVIS evaluation set.
+
+\begin{table}[t]
+\centering
+\small
+\caption{Uniform BRS on DAVIS ($n{=}74$ paired videos, H.264 CRF=23, point prompt). AdvOpt is an offline calibration tool; global-fixed applies its discovered operating point.}
+\label{tab:davis_full}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Method} & \textbf{$\Delta$JF (pp)} & \textbf{SSIM} & \textbf{Win-rate} & \textbf{$t$-stat} \\
+\midrule
+Fixed $\alpha{=}0.80$ (idea1) & 22.0 & 0.956 & baseline & --- \\
+AdvOpt ($\alpha{\approx}0.93$) & \textbf{53.0} & 0.943 & 93.2\% & 10.87 \\
+Global-fixed ($r{=}24, \alpha{=}0.93$) & $\approx$53.0 & 0.943 & equiv. & $t{=}0.31$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+AdvOpt and global-fixed are statistically equivalent ($+0.3\,\mathrm{pp}$, $t{=}0.31$, $n{=}27$).
+AdvOpt serves as an offline calibration tool that discovered the operating point; global-fixed application is sufficient for deployment.
+
+\subsection{Matched-Quality Baselines}
+
+A critical question is whether BRS outperforms simpler publisher-side transforms at matched visual quality.
+We compare against four alternatives, each tuned to match the BRS operating-point SSIM (${\approx}0.94$):
+
+\begin{itemize}
+  \item \textbf{Boundary blur:} Gaussian blur restricted to the boundary ring (same spatial support as BRS).
+  \item \textbf{Global blur:} Gaussian blur applied to the entire frame.
+  \item \textbf{Pixelation:} Downsample-then-upsample the boundary region at a block size tuned to match SSIM.
+  \item \textbf{Inpainting:} OpenCV Telea inpainting of the boundary ring.
+\end{itemize}
+
+% TODO: fill in after running eval_baselines.py
+% \begin{table}[t]
+% \centering
+% \small
+% \caption{Matched-quality baseline comparison (DAVIS $n{=}30$, H.264 CRF=23, SSIM matched to ${\approx}0.94$).}
+% \label{tab:baselines}
+% \begin{tabular}{lccc}
+% \toprule
+% \textbf{Method} & \textbf{$\Delta$JF (pp)} & \textbf{SSIM} & \textbf{Win-rate vs.\ BRS} \\
+% \midrule
+% BRS ($r{=}24, \alpha{=}0.93$) & 53.0 & 0.943 & --- \\
+% Boundary blur & ?.? & 0.94$\pm$ & ?/? \\
+% Global blur & ?.? & 0.94$\pm$ & ?/? \\
+% Pixelation & ?.? & 0.94$\pm$ & ?/? \\
+% Inpainting & ?.? & 0.94$\pm$ & ?/? \\
+% \bottomrule
+% \end{tabular}
+% \end{table}
+
+Preliminary results from the pareto sweep ($n{=}28$) show boundary blur achieves $9.1\,\mathrm{pp}$ at comparable SSIM, versus $11.3\,\mathrm{pp}$ for idea1---suggesting BRS's flat-mean proxy is meaningfully more effective than blur at creating codec-amplified boundary destruction.
+
+\subsection{Generalization}
+
+\begin{table}[t]
+\centering
+\small
+\caption{Generalization of uniform BRS across codecs, datasets, and trackers.}
+\label{tab:generalization}
+\begin{tabular}{llccc}
+\toprule
+\textbf{Axis} & \textbf{Setting} & \textbf{$n$} & \textbf{$\Delta$JF (pp)} & \textbf{Win-rate} \\
+\midrule
+Codec    & HEVC CRF=23  & 17  & 28.5 & 88.2\% \\
+Dataset  & YT-VOS full  & 497 & 9.2  & 91.9\% \\
+Dataset  & YT-VOS fair  & 50  & $-0.82$ (vs.\ fixed) & 94\% within $\pm 5$pp \\
+Tracker  & XMem         & 19  & 17.6 & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+BRS generalises across codecs (HEVC: $+28.5\,\mathrm{pp}$), datasets (YT-VOS $n{=}497$: $+9.2\,\mathrm{pp}$), and partially across trackers (XMem: $17.6\,\mathrm{pp}$, attenuated versus SAM2 due to XMem's lower reliance on boundary features).
+The YT-VOS fair comparison confirms that per-video AdvOpt and global-fixed are near-equivalent ($94\%$ of gains within $\pm 5\,\mathrm{pp}$).
+
+\subsection{Privacy-Quality-Utility Tradeoff}
+
+\paragraph{Quality.}
+At the operating point, $\mathrm{SSIM}{=}0.943$ and $\mathrm{LPIPS}{=}0.096$ ($n{=}20$ DAVIS).
+We do not claim visual imperceptibility; the appropriate characterisation is \emph{quality-constrained privacy protection} with bounded distortion.
+
+\paragraph{Frontier.}
+A parameter sweep ($r \in \{6,8,10,12,14,16,20,24\}$, $n{=}8$ per point) reveals a monotone privacy-quality frontier: under $\mathrm{SSIM}{\geq}0.95$, uniform BRS is capped at ${\sim}20\,\mathrm{pp}$.
+This ceiling motivates the anisotropic direction: to achieve stronger privacy at high fidelity, the budget must be \emph{redirected}, not increased.
+
+\paragraph{Downstream utility.}
+YOLO detection recall drops from $77.5\%$ (baseline) to $55.2\%$ (BRS at $\alpha{=}0.93$), a deliberate privacy cost.
+The method is designed for publishers prioritising tracking prevention over downstream annotation utility.

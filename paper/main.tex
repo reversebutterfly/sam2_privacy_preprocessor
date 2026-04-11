@@ -11,11 +11,14 @@
 \usepackage{multirow}
 \usepackage{makecell}
 \usepackage{xspace}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{booktabs}
 
 % Title
-\title{AdvOpt: Proxy-Validated Soft Surrogate-Constrained\\
-       Parameter Selection for Codec-Robust Privacy Preprocessing\\
-       in SAM2 Video Tracking}
+\title{Directional Boundary Suppression:\\
+       Fixed-Budget Anisotropic Privacy Preprocessing\\
+       for SAM2 Video Tracking}
 
 \author{
   Anonymous Authors\\
@@ -32,18 +35,13 @@
 \end{abstract}
 
 \input{sections/introduction.tex}
-\input{sections/related.tex}
 \input{sections/background.tex}
+\input{sections/related.tex}
 \input{sections/method.tex}
-\input{sections/discussion.tex}
+\input{sections/main_result.tex}
+% \input{sections/learning.tex}  % Deferred: predictor needs re-validation with bug-fixed code
+\input{sections/baselines.tex}
 \input{sections/conclusion.tex}
-
-% NOTE: sections below are from prior draft (adversarial attacks paper).
-% They are retained for reference but excluded from the current manuscript.
-% \input{sections/attacks.tex}
-% \input{sections/pixel_experiments.tex}
-% \input{sections/feature_experiments.tex}
-% \input{sections/analysis.tex}
 
 \bibliographystyle{abbrvnat}
 \bibliography{references}
