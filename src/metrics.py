@@ -18,6 +18,9 @@ def jaccard(pred: np.ndarray, gt: np.ndarray) -> float:
     """
     Intersection-over-union between binary masks.
 
+    Handles empty masks correctly: if both pred and gt are empty,
+    returns 1.0 (perfect agreement on "nothing here").
+
     Args:
         pred, gt: binary np.ndarray (bool or 0/1 int)
     Returns:
@@ -27,38 +30,78 @@ def jaccard(pred: np.ndarray, gt: np.ndarray) -> float:
     gt_b   = gt.astype(bool)
     inter  = np.logical_and(pred_b, gt_b).sum()
     union  = np.logical_or(pred_b, gt_b).sum()
-    return float(inter) / max(float(union), 1e-9)
+    if union == 0:
+        return 1.0  # both empty → perfect agreement
+    return float(inter) / float(union)
 
 
 # ── F (boundary accuracy) ─────────────────────────────────────────────────────
 
-def _boundary(mask: np.ndarray, dilation_ratio: float = 0.02) -> np.ndarray:
-    """Extract binary boundary with morphological dilation."""
-    h, w = mask.shape[-2:]
-    pixels = max(1, int(round(dilation_ratio * max(h, w))))
-    struct = np.ones((pixels, pixels), dtype=bool)
-    eroded   = binary_erosion(mask, struct)
-    boundary = np.logical_xor(mask, eroded)
-    return boundary
+def _disk_struct(radius: int) -> np.ndarray:
+    """Create a disk-shaped structuring element (standard DAVIS protocol)."""
+    d = 2 * radius + 1
+    y, x = np.ogrid[-radius:radius + 1, -radius:radius + 1]
+    return (x * x + y * y <= radius * radius).astype(bool)
+
+
+def _boundary(mask: np.ndarray, bound_pix: int) -> np.ndarray:
+    """Extract binary boundary: mask XOR erode(mask, disk(bound_pix)).
+
+    Matches the standard DAVIS 2017 evaluator protocol.
+    """
+    if mask.sum() == 0:
+        return np.zeros_like(mask, dtype=bool)
+    struct = _disk_struct(bound_pix)
+    eroded = binary_erosion(mask, struct)
+    return np.logical_xor(mask, eroded)
+
+
+def _compute_bound_pix(h: int, w: int, bound_thresh: float = 0.02) -> int:
+    """Compute boundary pixel tolerance: ceil(thresh * sqrt(h*w)).
+
+    Standard DAVIS protocol: bound_pix = ceil(0.02 * sqrt(h*w)).
+    For DAVIS 480p (480×854): bound_pix = 13.
+    """
+    import math
+    return max(1, math.ceil(bound_thresh * math.sqrt(h * w)))
 
 
 def f_measure(pred: np.ndarray, gt: np.ndarray, bound_thresh: float = 0.02) -> float:
     """
-    Boundary F-measure (precision / recall on dilated boundaries).
+    Boundary F-measure following the standard DAVIS 2017 protocol.
+
+    1. Compute bound_pix = ceil(bound_thresh * sqrt(h*w))
+    2. Extract boundaries via erosion with disk(bound_pix)
+    3. Match with dilation tolerance disk(bound_pix)
+    4. Return F1 = 2 * precision * recall / (precision + recall)
+
+    Returns 1.0 when both pred and gt boundaries are empty (both masks empty).
     """
     pred_b = pred.astype(bool)
     gt_b   = gt.astype(bool)
 
-    gt_boundary   = _boundary(gt_b,   bound_thresh)
-    pred_boundary = _boundary(pred_b, bound_thresh)
+    h, w = pred_b.shape[-2:]
+    bound_pix = _compute_bound_pix(h, w, bound_thresh)
+    disk = _disk_struct(bound_pix)
 
-    # Precision: how many pred boundary pixels are near GT boundary
-    tp_pred = np.logical_and(pred_boundary, binary_dilation(gt_boundary)).sum()
-    prec    = float(tp_pred) / max(pred_boundary.sum(), 1e-9)
+    gt_boundary   = _boundary(gt_b,   bound_pix)
+    pred_boundary = _boundary(pred_b, bound_pix)
 
-    # Recall: how many GT boundary pixels are near pred boundary
-    tp_gt = np.logical_and(gt_boundary, binary_dilation(pred_boundary)).sum()
-    rec   = float(tp_gt) / max(gt_boundary.sum(), 1e-9)
+    # Both boundaries empty → perfect agreement
+    if gt_boundary.sum() == 0 and pred_boundary.sum() == 0:
+        return 1.0
+
+    # Precision: pred boundary pixels within tolerance of GT boundary
+    gt_dilated = binary_dilation(gt_boundary, disk) if gt_boundary.sum() > 0 \
+        else np.zeros_like(gt_boundary)
+    tp_pred = np.logical_and(pred_boundary, gt_dilated).sum()
+    prec = float(tp_pred) / max(float(pred_boundary.sum()), 1e-9)
+
+    # Recall: GT boundary pixels within tolerance of pred boundary
+    pred_dilated = binary_dilation(pred_boundary, disk) if pred_boundary.sum() > 0 \
+        else np.zeros_like(pred_boundary)
+    tp_gt = np.logical_and(gt_boundary, pred_dilated).sum()
+    rec = float(tp_gt) / max(float(gt_boundary.sum()), 1e-9)
 
     if prec + rec < 1e-9:
         return 0.0
@@ -96,6 +139,9 @@ def mean_jf(
     Returns:
         (mean_jf, mean_j, mean_f)
     """
+    assert len(pred_sequence) == len(gt_sequence), (
+        f"Sequence length mismatch: pred={len(pred_sequence)}, gt={len(gt_sequence)}"
+    )
     scores = [jf_score(p, g) for p, g in zip(pred_sequence, gt_sequence)]
     jf_vals = [s[0] for s in scores]
     j_vals  = [s[1] for s in scores]

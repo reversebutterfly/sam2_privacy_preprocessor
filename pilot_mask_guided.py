@@ -431,6 +431,43 @@ def apply_old_boundary_suppression(
     return np.clip(f * (1 - w) + bg_proxy * w, 0, 255).astype(np.uint8)
 
 
+def apply_uap_sam2(
+    frame_rgb: np.ndarray,
+    mask: np.ndarray,
+    uap: np.ndarray,
+    **kwargs,
+) -> np.ndarray:
+    """Apply UAP-SAM2 universal adversarial perturbation to a frame.
+
+    uap: [3, H_uap, W_uap] float32 in [-eps, +eps] where eps = 10/255.
+         Values are in [0,1]-normalised pixel space, so multiply by 255 to get
+         pixel-space perturbation.
+    Center-crops the UAP to match the frame size; pads with zeros if the UAP
+    is smaller than the frame (rare on DAVIS).
+    The perturbation is applied globally (not masked).
+    """
+    H, W = frame_rgb.shape[:2]
+    _, uap_H, uap_W = uap.shape
+
+    # Center-crop UAP to frame size
+    y0 = max(0, (uap_H - H) // 2)
+    x0 = max(0, (uap_W - W) // 2)
+    cropped = uap[:, y0:y0 + H, x0:x0 + W]  # [3, h', w']
+    h_crop, w_crop = cropped.shape[1], cropped.shape[2]
+
+    # Convert [C,H,W] → [H,W,C] and scale to [0,255] pixel space
+    delta = cropped.transpose(1, 2, 0) * 255.0  # now in [-10, 10]
+
+    # Zero-pad if frame is larger than UAP
+    if h_crop < H or w_crop < W:
+        pad = np.zeros((H, W, 3), dtype=np.float32)
+        pad[:h_crop, :w_crop] = delta
+        delta = pad
+
+    result = frame_rgb.astype(np.float32) + delta
+    return np.clip(result, 0, 255).astype(np.uint8)
+
+
 EDIT_FNS = {
     "idea1":            apply_boundary_suppression,
     "idea1_old":        apply_old_boundary_suppression,
@@ -441,6 +478,7 @@ EDIT_FNS = {
     "global_bright":    apply_global_brightness,
     "boundary_blur":    apply_boundary_blur,
     "interior_feather": apply_interior_feather,
+    "uap_sam2":         apply_uap_sam2,
 }
 
 
@@ -626,8 +664,10 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--edit_type", default="combo",
                    choices=["idea1", "idea1_old", "idea1_asym", "idea2", "combo",
-                            "global_blur", "global_bright"],
-                   help="Which edit: idea1 (new BRS), idea1_old (archived), idea1_asym (asymmetric hard-proxy), idea2, combo")
+                            "global_blur", "global_bright", "uap_sam2"],
+                   help="Which edit: idea1 (new BRS), idea1_old (archived), idea1_asym (asymmetric hard-proxy), idea2, combo, uap_sam2")
+    p.add_argument("--uap_path", default="",
+                   help="uap_sam2: path to UAP .pth file (tensor [1,3,H,W] or [3,H,W] float32 in [-eps,eps])")
     p.add_argument("--asym_rho", type=float, default=0.08,
                    help="idea1_asym: inner shell = clip(rho*sqrt(area/pi), 5, inner_cap)")
     p.add_argument("--asym_inner_cap", type=int, default=18,
@@ -728,6 +768,12 @@ def edit_params(args) -> dict:
                 "halo_strength": args.halo_strength}
     elif args.edit_type in ("global_blur", "global_bright"):
         return {"ring_width": args.ring_width, "blend_alpha": args.blend_alpha}
+    elif args.edit_type == "uap_sam2":
+        import torch as _torch
+        uap_tensor = _torch.load(args.uap_path, map_location="cpu", weights_only=False)
+        if uap_tensor.dim() == 4:
+            uap_tensor = uap_tensor[0]  # [3, H, W]
+        return {"uap": uap_tensor.numpy()}
     else:  # combo
         return {
             **idea1_params,
@@ -778,6 +824,8 @@ def main():
         # ── Codec-clean baseline ──
         codec_frames = codec_round_trip(frames, args.ffmpeg_path, args.crf)
         if codec_frames:
+            assert len(codec_frames) == len(frames), (
+                f"Codec dropped frames: {len(codec_frames)} vs {len(frames)}")
             _, jf_codec_clean, j_cc, f_cc = run_tracking(codec_frames, masks, predictor, device, args.prompt)
             print(f"  codec_clean: JF={jf_codec_clean:.4f}")
         else:
@@ -794,10 +842,12 @@ def main():
             ring_width_rho=args.ring_width_rho,
         )
 
-        # Quality check (sampled on first 5 frames)
+        # Quality check (all frames, evenly sampled up to 20 for efficiency)
+        n_qual = min(len(frames), 20)
+        qual_indices = np.linspace(0, len(frames) - 1, n_qual, dtype=int)
         ssim_vals, psnr_vals = [], []
-        for fo, fe in zip(frames[:5], edited_frames[:5]):
-            s, p = frame_quality(fo, fe)
+        for qi in qual_indices:
+            s, p = frame_quality(frames[qi], edited_frames[qi])
             ssim_vals.append(s)
             psnr_vals.append(p)
         mean_ssim = float(np.mean(ssim_vals))
@@ -812,6 +862,8 @@ def main():
         # ── Post-codec adversarial ──
         codec_edited = codec_round_trip(edited_frames, args.ffmpeg_path, args.crf)
         if codec_edited:
+            assert len(codec_edited) == len(edited_frames), (
+                f"Codec dropped adv frames: {len(codec_edited)} vs {len(edited_frames)}")
             _, jf_codec_adv, j_ca, f_ca = run_tracking(codec_edited, masks, predictor, device, args.prompt)
             delta_codec = jf_codec_clean - jf_codec_adv
             print(f"  adv (post-codec CRF{args.crf}): JF={jf_codec_adv:.4f}  ΔJF={delta_codec:+.4f}")
